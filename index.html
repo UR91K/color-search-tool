@@ -975,10 +975,12 @@
                     return;
                 }
 
-                currentMatches = colorData.filter(color =>
-                    color.name.toLowerCase().includes(query) ||
-                    color.hex.toLowerCase().includes(query)
-                );
+                currentMatches = colorData.filter(color => {
+                    if (hideUnflaggedColors && !color.flag) return false;
+                    
+                    return color.name.toLowerCase().includes(query) ||
+                           color.hex.toLowerCase().includes(query);
+                });
 
                 if (currentMatches.length > 0) {
                     searchResults.innerHTML = currentMatches.map((color, index) => `
@@ -1212,6 +1214,12 @@
             hideUnflaggedCheckbox.addEventListener('change', (e) => {
                 hideUnflaggedColors = e.target.checked;
                 updateUnflaggedVisibility();
+                
+                // Refresh search results if there's an active query
+                const query = searchInput.value.trim().toLowerCase();
+                if (query.length >= 2) {
+                    updateSearchResults(query);
+                }
             });
         }
 

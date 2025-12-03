@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Oklab Color Space Explorer</title>
+    <title>Colour Explorer</title>
     <style>
         * {
             margin: 0;
@@ -80,8 +80,9 @@
             gap: 12px;
             color: #fff;
         }
-        .search-result-item:hover {
-            background: rgba(50, 50, 50, 0.8);
+        .search-result-item:hover,
+        .search-result-item.selected {
+            background: rgba(70, 70, 70, 0.9);
         }
         .color-swatch {
             width: 30px;
@@ -216,16 +217,16 @@
             flex: 1;
             font-size: 15px;
         }
-        #scale-slider {
+        #scale-slider, #background-red, #background-green, #background-blue {
             flex: 2;
-            accent-color: #21e1ff;
+            accent-color: #c0c0c0;
             height: 4px;
         }
         #scale-value {
             min-width: 34px;
             text-align: right;
             font-variant-numeric: tabular-nums;
-            color: #8cf2ff;
+            color: #ffffff;
         }
 
         @media (max-width: 600px) {
@@ -245,7 +246,7 @@
     <div id="search-container" style="flex-direction:column;align-items:stretch;">
         <div style="display:flex;gap:12px;align-items:center;">
             <select id="color-space-selector">
-                <option value="oklab">OKLab</option>
+                <option value="oklab">Oklab</option>
                 <option value="rgb">RGB</option>
             </select>
             <input type="text" id="search-input" placeholder="Search by name or hex code...">
@@ -253,16 +254,30 @@
         <div id="search-results" style="margin-top:4px;"></div>
     </div>
 
-    <!-- INSERT_YOUR_CODE -->
     <div id="settings-menu">
         <button id="settings-toggle" title="Settings">
-            <svg id="settings-gear" xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24"><g stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="4" fill="none"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.05a2 2 0 1 1-2.82 2.83l-.05-.06a1.65 1.65 0 0 0-1.82-.33c-.6.25-1.25.39-1.9.39s-1.3-.14-1.9-.39a1.65 1.65 0 0 0-1.82.33l-.05.06a2 2 0 1 1-2.83-2.83l.06-.05a1.65 1.65 0 0 0 .33-1.82c-.25-.6-.39-1.25-.39-1.9s.14-1.3.39-1.9a1.65 1.65 0 0 0-.33-1.82l-.06-.05A2 2 0 1 1 5.05 5.05l.05.06a1.65 1.65 0 0 0 1.82.33c.6-.25 1.25-.39 1.9-.39s1.3.14 1.9.39a1.65 1.65 0 0 0 1.82-.33l.05-.06a2 2 0 1 1 2.83 2.83l-.06.05a1.65 1.65 0 0 0-.33 1.82c.25.6.39 1.25.39 1.9s-.14 1.3-.39 1.9Z" fill="none"/></g></svg>
+            <img id="settings-gear" src="settings.svg" width="90" height="22" alt="Settings">
         </button>
         <div id="settings-panel">
             <div class="setting-group">
                 <label for="scale-slider">Sphere scale</label>
                 <input id="scale-slider" type="range" min="0.1" max="5" step="0.01" value="1" />
                 <span id="scale-value">1.00</span>
+            </div>
+            <div class="setting-group">
+                <label for="background-red">Background Red</label>
+                <input id="background-red" type="range" min="0" max="255" step="1" value="2" />
+                <span id="background-red-value">2</span>
+            </div>
+            <div class="setting-group">
+                <label for="background-green">Background Green</label>
+                <input id="background-green" type="range" min="0" max="255" step="1" value="2" />
+                <span id="background-green-value">2</span>
+            </div>
+            <div class="setting-group">
+                <label for="background-blue">Background Blue</label>
+                <input id="background-blue" type="range" min="0" max="255" step="1" value="2" />
+                <span id="background-blue-value">2</span>
             </div>
         </div>
     </div>
@@ -313,6 +328,18 @@
         let isAnimatingOrbitPoint = false;
         let isAnimatingDistance = false;
         let scale = 1.0;
+        let pixelThreshold = 8;
+
+        let hideUnflaggedColors = false;
+
+        let backgroundRed = 2
+        let backgroundGreen = 2
+        let backgroundBlue = 2
+
+        // GPU picking setup
+        let pickingMesh = null;
+        let pickingRenderTarget = null;
+        let pickingMaterial = null;
 
         // current color space
         let currentColorSpace = null;
@@ -320,7 +347,7 @@
         // color space definitions
         const colorSpaces = {
             oklab: {
-                name: 'OKLab',
+                name: 'Oklab',
                 scale: 4.0,  // Uniform scale factor for all axes
                 getPosition: (color) => {
                     return {
@@ -359,7 +386,7 @@
 
         function init() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x0a0a0a);
+            updateSceneBackground();
 
             camera = new THREE.PerspectiveCamera(
                 75,
@@ -431,7 +458,7 @@
                             r: rgb.r,
                             g: rgb.g,
                             b: rgb.b,
-                            flag: JSON.parse(parts[5])
+                            flag: JSON.parse(parts[5]),
                         });
                     }
 
@@ -473,17 +500,42 @@
         async function createColorSpheres() {
             const totalColors = colorData.length;
 
-            const geometry = new THREE.SphereGeometry(0.004, 8, 6);
+            const geometry = new THREE.SphereGeometry(0.004, 16, 12);
 
             const material = new THREE.MeshBasicMaterial();
 
             instancedMesh = new THREE.InstancedMesh(geometry, material, totalColors);
+            instancedMesh.frustumCulled = false;  // Disable culling - instances spread far from origin
+
+            // Create GPU picking system
+            pickingRenderTarget = new THREE.WebGLRenderTarget(1, 1);
+            pickingMaterial = new THREE.MeshBasicMaterial();
+            pickingMesh = new THREE.InstancedMesh(geometry, pickingMaterial, totalColors);
+            pickingMesh.frustumCulled = false;
+            pickingMesh.visible = false; // Hidden, only rendered to pick buffer
 
             await updateSpherePositions();
 
             scene.add(instancedMesh);
+            scene.add(pickingMesh);
 
             console.log(`created instanced mesh with ${totalColors} instances`);
+        }
+
+        // Encode instance index as RGB color (offset by 1 so black=0 means "no hit")
+        // Index 0 becomes color (1,0,0), index 1 becomes (1,0,1), etc.
+        function indexToColor(index) {
+            const encoded = index + 1; // Offset by 1 so 0 is never used
+            const r = ((encoded >> 16) & 0xff) / 255;
+            const g = ((encoded >> 8) & 0xff) / 255;
+            const b = (encoded & 0xff) / 255;
+            return new THREE.Color(r, g, b);
+        }
+
+        // Decode RGB color back to instance index
+        function colorToIndex(r, g, b) {
+            const encoded = (r << 16) | (g << 8) | b;
+            return encoded - 1; // Remove offset
         }
 
         // update sphere positions based on current color space
@@ -500,10 +552,18 @@
 
                 dummy.position.set(pos.x, pos.y, pos.z);
                 dummy.updateMatrix();
+                
+                // Update visible mesh
                 instancedMesh.setMatrixAt(i, dummy.matrix);
-
                 color.set(colorData_item.hex);
                 instancedMesh.setColorAt(i, color);
+
+                // Update picking mesh with same position but ID-encoded color
+                if (pickingMesh) {
+                    pickingMesh.setMatrixAt(i, dummy.matrix);
+                    const idColor = indexToColor(i);
+                    pickingMesh.setColorAt(i, idColor);
+                }
 
                 if (i % 1000 === 0) {
                     const progress = 70 + (i / totalColors) * 30;
@@ -515,6 +575,11 @@
 
             instancedMesh.instanceMatrix.needsUpdate = true;
             instancedMesh.instanceColor.needsUpdate = true;
+            
+            if (pickingMesh) {
+                pickingMesh.instanceMatrix.needsUpdate = true;
+                pickingMesh.instanceColor.needsUpdate = true;
+            }
 
             // reset selection when switching color spaces
             if (selectedColorIndex >= 0) {
@@ -548,48 +613,88 @@
             camera.lookAt(orbitPoint);
         }
 
-        // Reusable vector for screen-space picking
-        const tempVector = new THREE.Vector3();
+        function updateSceneBackground() {
+            if (scene) {
+                scene.background = new THREE.Color(
+                    backgroundRed / 255,
+                    backgroundGreen / 255,
+                    backgroundBlue / 255
+                );
+            }
+        }
 
-        // Find the closest color to a ray within a screen-space pixel threshold
-        function findClosestColorToRay(mouseX, mouseY, pixelThreshold = 10) {
-            if (!currentColorSpace || colorData.length === 0) return -1;
+        // GPU-based picking: render picking mesh to offscreen buffer and read pixel
+        function pickColorAtPixel(mouseX, mouseY) {
+            if (!pickingMesh || !pickingRenderTarget) return -1;
 
-            let closestIndex = -1;
-            let closestScreenDist = pixelThreshold;
-
-            for (let i = 0; i < colorData.length; i++) {
-                const pos = currentColorSpace.getPosition(colorData[i]);
-                tempVector.set(pos.x, pos.y, pos.z);
-
-                // Project to screen space
-                tempVector.project(camera);
-
-                // Convert to pixel coordinates
-                const screenX = (tempVector.x * 0.5 + 0.5) * window.innerWidth;
-                const screenY = (-tempVector.y * 0.5 + 0.5) * window.innerHeight;
-
-                // Check if point is in front of camera (z < 1 after projection)
-                if (tempVector.z > 1) continue;
-
-                // Calculate screen distance
-                const dx = screenX - mouseX;
-                const dy = screenY - mouseY;
-                const screenDist = Math.sqrt(dx * dx + dy * dy);
-
-                if (screenDist < closestScreenDist) {
-                    closestScreenDist = screenDist;
-                    closestIndex = i;
-                }
+            // Resize render target to match viewport
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            if (pickingRenderTarget.width !== width || pickingRenderTarget.height !== height) {
+                pickingRenderTarget.setSize(width, height);
             }
 
-            return closestIndex;
+            // Store original state
+            const originalRenderTarget = renderer.getRenderTarget();
+            const originalAutoClear = renderer.autoClear;
+            const originalBackground = scene.background;
+            
+            // Hide visible mesh, show picking mesh
+            instancedMesh.visible = false;
+            pickingMesh.visible = true;
+            
+            // Temporarily disable scene background for picking (ensures pure black = no hit)
+            scene.background = null;
+            
+            // Render only picking mesh to offscreen buffer
+            renderer.autoClear = true;
+            renderer.setRenderTarget(pickingRenderTarget);
+            renderer.clear();
+            renderer.render(scene, camera);
+            
+            // Restore state
+            pickingMesh.visible = false;
+            instancedMesh.visible = true;
+            scene.background = originalBackground;
+            renderer.setRenderTarget(originalRenderTarget);
+            renderer.autoClear = originalAutoClear;
+
+            // Read pixel at mouse position
+            const pixelBuffer = new Uint8Array(4);
+            const readX = Math.floor(mouseX);
+            const readY = height - Math.floor(mouseY) - 1; // Flip Y coordinate
+            
+            renderer.readRenderTargetPixels(
+                pickingRenderTarget,
+                readX, readY,
+                1, 1,
+                pixelBuffer
+            );
+
+            // Decode color to index
+            const r = pixelBuffer[0];
+            const g = pixelBuffer[1];
+            const b = pixelBuffer[2];
+            
+            // If pixel is pure black (0,0,0), no object was hit
+            if (r === 0 && g === 0 && b === 0) {
+                return -1;
+            }
+            
+            const index = colorToIndex(r, g, b);
+
+            // Validate index
+            if (index >= 0 && index < colorData.length) {
+                return index;
+            }
+            
+            return -1;
         }
         
         function handleColorClick(event) {
             if (!instancedMesh) return;
 
-            const instanceId = findClosestColorToRay(event.clientX, event.clientY, 15);
+            const instanceId = pickColorAtPixel(event.clientX, event.clientY);
 
             if (instanceId >= 0) {
                 const color = colorData[instanceId];
@@ -663,9 +768,9 @@
             renderer.render(scene, camera);
         }
 
-        // Throttle tooltip updates for performance
+        // Throttle tooltip updates for performance (GPU picking is fast, but we still throttle to avoid excessive rendering)
         let lastTooltipUpdate = 0;
-        const tooltipThrottleMs = 50;
+        const tooltipThrottleMs = 16; // ~60fps updates
 
         function updateTooltip(event) {
             if (!instancedMesh) return;
@@ -678,7 +783,7 @@
             const tooltipName = tooltip.querySelector('.tooltip-name');
             const tooltipHex = tooltip.querySelector('.tooltip-hex');
 
-            const instanceId = findClosestColorToRay(event.clientX, event.clientY, 15);
+            const instanceId = pickColorAtPixel(event.clientX, event.clientY);
 
             if (instanceId >= 0) {
                 const color = colorData[instanceId];
@@ -727,23 +832,39 @@
             // Search
             const searchInput = document.getElementById('search-input');
             const searchResults = document.getElementById('search-results');
+            let currentSelectedIndex = -1;
+            let currentMatches = [];
 
-            searchInput.addEventListener('input', (e) => {
-                const query = e.target.value.trim().toLowerCase();
+            // Debounce function
+            function debounce(func, wait) {
+                let timeout;
+                return function executedFunction(...args) {
+                    const later = () => {
+                        clearTimeout(timeout);
+                        func(...args);
+                    };
+                    clearTimeout(timeout);
+                    timeout = setTimeout(later, wait);
+                };
+            }
 
+            // Update search results
+            const updateSearchResults = (query) => {
                 if (query.length < 2) {
                     searchResults.style.display = 'none';
+                    currentMatches = [];
+                    currentSelectedIndex = -1;
                     return;
                 }
 
-                const matches = colorData.filter(color =>
+                currentMatches = colorData.filter(color =>
                     color.name.toLowerCase().includes(query) ||
                     color.hex.toLowerCase().includes(query)
-                ).slice(0, 10);
+                );
 
-                if (matches.length > 0) {
-                    searchResults.innerHTML = matches.map(color => `
-                        <div class="search-result-item" data-name="${color.name}">
+                if (currentMatches.length > 0) {
+                    searchResults.innerHTML = currentMatches.map((color, index) => `
+                        <div class="search-result-item ${index === 0 ? 'selected' : ''}" data-name="${color.name}" data-index="${index}">
                             <div class="color-swatch" style="background-color: ${color.hex}"></div>
                             <div class="color-info">
                                 <div class="color-name">${color.name}</div>
@@ -752,6 +873,14 @@
                         </div>
                     `).join('');
                     searchResults.style.display = 'block';
+                    currentSelectedIndex = 0;
+
+                    // Automatically jump to the top result
+                    const topColor = currentMatches[0];
+                    const colorIndex = colorData.findIndex(c => c.name === topColor.name);
+                    if (colorIndex >= 0) {
+                        jumpToColor(colorData[colorIndex], colorIndex);
+                    }
 
                     // Add click handlers
                     searchResults.querySelectorAll('.search-result-item').forEach(item => {
@@ -762,13 +891,101 @@
                                 jumpToColor(colorData[colorIndex], colorIndex);
                                 searchInput.value = '';
                                 searchResults.style.display = 'none';
+                                currentMatches = [];
+                                currentSelectedIndex = -1;
                             }
                         });
                     });
                 } else {
                     searchResults.style.display = 'none';
+                    currentMatches = [];
+                    currentSelectedIndex = -1;
+                }
+            };
+
+            // Debounced search function
+            const debouncedSearch = debounce(updateSearchResults, 150);
+
+            searchInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim().toLowerCase();
+                debouncedSearch(query);
+            });
+
+            // Keyboard navigation
+            searchInput.addEventListener('keydown', (e) => {
+                if (currentMatches.length === 0) return;
+
+                switch (e.key) {
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        currentSelectedIndex = Math.min(currentSelectedIndex + 1, currentMatches.length - 1);
+                        updateSelectedItem();
+                        scrollToSelectedItem();
+                        // jump to the newly selected color
+                        if (currentSelectedIndex >= 0 && currentSelectedIndex < currentMatches.length) {
+                            const selectedColor = currentMatches[currentSelectedIndex];
+                            const colorIndex = colorData.findIndex(c => c.name === selectedColor.name);
+                            if (colorIndex >= 0) {
+                                jumpToColor(colorData[colorIndex], colorIndex);
+                            }
+                        }
+                        break;
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        currentSelectedIndex = Math.max(currentSelectedIndex - 1, 0);
+                        updateSelectedItem();
+                        scrollToSelectedItem();
+                        // Jump to the newly selected color
+                        if (currentSelectedIndex >= 0 && currentSelectedIndex < currentMatches.length) {
+                            const selectedColor = currentMatches[currentSelectedIndex];
+                            const colorIndex = colorData.findIndex(c => c.name === selectedColor.name);
+                            if (colorIndex >= 0) {
+                                jumpToColor(colorData[colorIndex], colorIndex);
+                            }
+                        }
+                        break;
+                    case 'Enter':
+                        e.preventDefault();
+                        if (currentSelectedIndex >= 0 && currentSelectedIndex < currentMatches.length) {
+                            const selectedColor = currentMatches[currentSelectedIndex];
+                            const colorIndex = colorData.findIndex(c => c.name === selectedColor.name);
+                            if (colorIndex >= 0) {
+                                jumpToColor(colorData[colorIndex], colorIndex);
+                                searchInput.value = '';
+                                searchResults.style.display = 'none';
+                                currentMatches = [];
+                                currentSelectedIndex = -1;
+                            }
+                        }
+                        break;
+                    case 'Escape':
+                        searchResults.style.display = 'none';
+                        currentMatches = [];
+                        currentSelectedIndex = -1;
+                        break;
                 }
             });
+
+            function updateSelectedItem() {
+                const items = searchResults.querySelectorAll('.search-result-item');
+                items.forEach((item, index) => {
+                    if (index === currentSelectedIndex) {
+                        item.classList.add('selected');
+                    } else {
+                        item.classList.remove('selected');
+                    }
+                });
+            }
+
+            function scrollToSelectedItem() {
+                const selectedItem = searchResults.querySelector('.search-result-item.selected');
+                if (selectedItem) {
+                    selectedItem.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'nearest'
+                    });
+                }
+            }
 
             searchInput.addEventListener('blur', () => {
                 setTimeout(() => {
@@ -826,11 +1043,48 @@
             scaleSlider.addEventListener('input', async () => {
                 scale = parseFloat(scaleSlider.value);
                 scaleValue.textContent = scale.toFixed(2);
-                
+
                 // Update sphere positions with new scale
                 if (instancedMesh && currentColorSpace) {
                     await updateSpherePositions();
                 }
+            });
+
+            // Background color sliders
+            const backgroundRedSlider = document.getElementById('background-red');
+            const backgroundGreenSlider = document.getElementById('background-green');
+            const backgroundBlueSlider = document.getElementById('background-blue');
+            const backgroundRedValue = document.getElementById('background-red-value');
+            const backgroundGreenValue = document.getElementById('background-green-value');
+            const backgroundBlueValue = document.getElementById('background-blue-value');
+
+            // Initialize background values from sliders and display
+            backgroundRed = parseInt(backgroundRedSlider.value);
+            backgroundGreen = parseInt(backgroundGreenSlider.value);
+            backgroundBlue = parseInt(backgroundBlueSlider.value);
+            backgroundRedValue.textContent = backgroundRed;
+            backgroundGreenValue.textContent = backgroundGreen;
+            backgroundBlueValue.textContent = backgroundBlue;
+
+            // Update scene background
+            updateSceneBackground();
+
+            backgroundRedSlider.addEventListener('input', () => {
+                backgroundRed = parseInt(backgroundRedSlider.value);
+                backgroundRedValue.textContent = backgroundRed;
+                updateSceneBackground();
+            });
+
+            backgroundGreenSlider.addEventListener('input', () => {
+                backgroundGreen = parseInt(backgroundGreenSlider.value);
+                backgroundGreenValue.textContent = backgroundGreen;
+                updateSceneBackground();
+            });
+
+            backgroundBlueSlider.addEventListener('input', () => {
+                backgroundBlue = parseInt(backgroundBlueSlider.value);
+                backgroundBlueValue.textContent = backgroundBlue;
+                updateSceneBackground();
             });
         }
 

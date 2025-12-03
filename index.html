@@ -228,6 +228,12 @@
             font-variant-numeric: tabular-nums;
             color: #ffffff;
         }
+        #hide-unflagged-checkbox {
+            accent-color: #c0c0c0;
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+        }
 
         @media (max-width: 600px) {
             #settings-panel { min-width: 130px; padding: 13px 11px 11px 11px;}
@@ -278,6 +284,10 @@
                 <label for="background-blue">Background Blue</label>
                 <input id="background-blue" type="range" min="0" max="255" step="1" value="2" />
                 <span id="background-blue-value">2</span>
+            </div>
+            <div class="setting-group" style="margin-top: 12px;">
+                <label for="hide-unflagged-checkbox" style="flex: 1; cursor: pointer;">Hide unflagged colors</label>
+                <input id="hide-unflagged-checkbox" type="checkbox" />
             </div>
         </div>
     </div>
@@ -538,6 +548,75 @@
             return encoded - 1; // Remove offset
         }
 
+        // efficiently update visibility of unflagged colors
+        function updateUnflaggedVisibility() {
+            if (!instancedMesh) return;
+
+            const totalColors = colorData.length;
+            const dummy = new THREE.Object3D();
+            let needsUpdate = false;
+
+            for (let i = 0; i < totalColors; i++) {
+                const colorData_item = colorData[i];
+                const shouldHide = hideUnflaggedColors && !colorData_item.flag;
+                
+                // Skip if this is the selected color (it has special scaling)
+                if (i === selectedColorIndex) continue;
+
+                // Get current matrix
+                instancedMesh.getMatrixAt(i, dummy.matrix);
+                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+
+                // Determine target scale
+                const targetScale = shouldHide ? 0 : 1;
+                
+                // Only update if scale needs to change
+                // Using epsilon for float comparison safety
+                if (Math.abs(dummy.scale.x - targetScale) > 0.001) {
+                    // If recovering from scale 0, decompose() might have produced invalid quaternion.
+                    // To be safe, we recompute position and reset quaternion.
+                    const pos = currentColorSpace.getPosition(colorData_item);
+                    dummy.position.set(pos.x, pos.y, pos.z);
+                    dummy.quaternion.identity();
+                    dummy.scale.set(targetScale, targetScale, targetScale);
+                    
+                    dummy.updateMatrix();
+                    instancedMesh.setMatrixAt(i, dummy.matrix);
+                    needsUpdate = true;
+                }
+            }
+
+            // Also update picking mesh visibility
+            if (pickingMesh) {
+                for (let i = 0; i < totalColors; i++) {
+                    const colorData_item = colorData[i];
+                    const shouldHide = hideUnflaggedColors && !colorData_item.flag;
+                    
+                    if (i === selectedColorIndex) continue;
+
+                    pickingMesh.getMatrixAt(i, dummy.matrix);
+                    dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+
+                    const targetScale = shouldHide ? 0 : 1;
+                    
+                    if (Math.abs(dummy.scale.x - targetScale) > 0.001) {
+                        const pos = currentColorSpace.getPosition(colorData_item);
+                        dummy.position.set(pos.x, pos.y, pos.z);
+                        dummy.quaternion.identity();
+                        dummy.scale.set(targetScale, targetScale, targetScale);
+
+                        dummy.updateMatrix();
+                        pickingMesh.setMatrixAt(i, dummy.matrix);
+                    }
+                }
+                pickingMesh.instanceMatrix.needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+                instancedMesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
         // update sphere positions based on current color space
         async function updateSpherePositions() {
             if (!instancedMesh || !currentColorSpace) return;
@@ -551,6 +630,14 @@
                 const pos = currentColorSpace.getPosition(colorData_item);
 
                 dummy.position.set(pos.x, pos.y, pos.z);
+                // Set scale based on visibility and selection
+                if (i === selectedColorIndex) {
+                    dummy.scale.set(2.4, 2.4, 2.4);
+                } else if (hideUnflaggedColors && !colorData_item.flag) {
+                    dummy.scale.set(0, 0, 0);
+                } else {
+                    dummy.scale.set(1, 1, 1);
+                }
                 dummy.updateMatrix();
                 
                 // Update visible mesh
@@ -584,13 +671,22 @@
             // reset selection when switching color spaces
             if (selectedColorIndex >= 0) {
                 const dummy = new THREE.Object3D();
-                dummy.scale.set(1, 1, 1);
                 instancedMesh.getMatrixAt(selectedColorIndex, dummy.matrix);
                 dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                dummy.scale.set(1, 1, 1);
+                // Restore scale based on visibility setting
+                const colorData_item = colorData[selectedColorIndex];
+                const targetScale = (hideUnflaggedColors && !colorData_item.flag) ? 0 : 1;
+                dummy.scale.set(targetScale, targetScale, targetScale);
                 dummy.updateMatrix();
                 instancedMesh.setMatrixAt(selectedColorIndex, dummy.matrix);
                 instancedMesh.instanceMatrix.needsUpdate = true;
+                
+                // Also update picking mesh
+                if (pickingMesh) {
+                    pickingMesh.setMatrixAt(selectedColorIndex, dummy.matrix);
+                    pickingMesh.instanceMatrix.needsUpdate = true;
+                }
+                
                 selectedColorIndex = -1;
                 selectedColor = null;
             }
@@ -714,13 +810,21 @@
             // reset previous selection
             if (selectedColorIndex >= 0 && instancedMesh) {
                 const dummy = new THREE.Object3D();
-                dummy.scale.set(1, 1, 1);
                 instancedMesh.getMatrixAt(selectedColorIndex, dummy.matrix);
                 dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                dummy.scale.set(1, 1, 1);
+                // Restore scale based on visibility setting
+                const colorData_item = colorData[selectedColorIndex];
+                const targetScale = (hideUnflaggedColors && !colorData_item.flag) ? 0 : 1;
+                dummy.scale.set(targetScale, targetScale, targetScale);
                 dummy.updateMatrix();
                 instancedMesh.setMatrixAt(selectedColorIndex, dummy.matrix);
                 instancedMesh.instanceMatrix.needsUpdate = true;
+                
+                // Also update picking mesh
+                if (pickingMesh) {
+                    pickingMesh.setMatrixAt(selectedColorIndex, dummy.matrix);
+                    pickingMesh.instanceMatrix.needsUpdate = true;
+                }
             }
 
             // highlight the new selection
@@ -731,10 +835,24 @@
                 const dummy = new THREE.Object3D();
                 instancedMesh.getMatrixAt(instanceId, dummy.matrix);
                 dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                
+                // FIX: If previously hidden (scale ~0), quaternion might be invalid.
+                // Reset to safe defaults.
+                if (dummy.scale.x < 0.001) {
+                    dummy.quaternion.identity();
+                    dummy.position.set(pos.x, pos.y, pos.z);
+                }
+                
                 dummy.scale.set(2.4, 2.4, 2.4);
                 dummy.updateMatrix();
                 instancedMesh.setMatrixAt(instanceId, dummy.matrix);
                 instancedMesh.instanceMatrix.needsUpdate = true;
+                
+                // Also update picking mesh
+                if (pickingMesh) {
+                    pickingMesh.setMatrixAt(instanceId, dummy.matrix);
+                    pickingMesh.instanceMatrix.needsUpdate = true;
+                }
             }
 
             console.log(`Selected: ${color.name} (${color.hex})`);
@@ -1085,6 +1203,15 @@
                 backgroundBlue = parseInt(backgroundBlueSlider.value);
                 backgroundBlueValue.textContent = backgroundBlue;
                 updateSceneBackground();
+            });
+
+            // Hide unflagged colors checkbox
+            const hideUnflaggedCheckbox = document.getElementById('hide-unflagged-checkbox');
+            hideUnflaggedCheckbox.checked = hideUnflaggedColors;
+            
+            hideUnflaggedCheckbox.addEventListener('change', (e) => {
+                hideUnflaggedColors = e.target.checked;
+                updateUnflaggedVisibility();
             });
         }
 

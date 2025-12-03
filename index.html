@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oklab Color Space Explorer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            background: #000;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        #search-container {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+        }
+        #search-input {
+            padding: 12px 20px;
+            font-size: 16px;
+            border: 2px solid #444;
+            border-radius: 25px;
+            background: rgba(20, 20, 20, 0.9);
+            color: #fff;
+            width: 400px;
+            outline: none;
+            transition: all 0.3s;
+        }
+        #search-input:focus {
+            border-color: #888;
+            background: rgba(30, 30, 30, 0.95);
+        }
+        #search-results {
+            margin-top: 8px;
+            background: rgba(20, 20, 20, 0.95);
+            border-radius: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+        }
+        .search-result-item {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #fff;
+        }
+        .search-result-item:hover {
+            background: rgba(50, 50, 50, 0.8);
+        }
+        .color-swatch {
+            width: 30px;
+            height: 30px;
+            border-radius: 5px;
+            border: 1px solid #666;
+        }
+        .color-info {
+            flex: 1;
+        }
+        .color-name {
+            font-weight: 600;
+        }
+        .color-hex {
+            font-size: 12px;
+            color: #aaa;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 24px;
+            z-index: 1000;
+            text-align: center;
+        }
+        #loading-bar-container {
+            width: 300px;
+            height: 20px;
+            background: rgba(50, 50, 50, 0.8);
+            border-radius: 10px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        #loading-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #4a9eff, #7ec8ff);
+            transition: width 0.3s;
+        }
+        #loading-status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: #aaa;
+            font-size: 12px;
+            background: rgba(20, 20, 20, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            line-height: 1.6;
+        }
+        #tooltip {
+            position: absolute;
+            background: rgba(20, 20, 20, 0.95);
+            color: #fff;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 14px;
+            pointer-events: none;
+            display: none;
+            z-index: 1000;
+            border: 1px solid #444;
+            line-height: 1.5;
+        }
+        #tooltip .tooltip-name {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        #tooltip .tooltip-hex {
+            font-family: monospace;
+            color: #aaa;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        ;oading colors...
+        <div id="loading-bar-container">
+            <div id="loading-bar"></div>
+        </div>
+        <div id="loading-status">initializing...</div>
+    </div>
+
+    <div id="search-container">
+        <input type="text" id="search-input" placeholder="Search by name or hex code...">
+        <div id="search-results"></div>
+    </div>
+
+    <div id="info">
+        <strong>Controls:</strong><br>
+        Right-click + drag: Orbit camera<br>
+        Scroll: Zoom in/out<br>
+        Click color: Jump to color<br>
+        WASD: Move orbit point<br>
+        Space/Ctrl: Move orbit point up/down
+    </div>
+
+    <div id="tooltip">
+        <div class="tooltip-name"></div>
+        <div class="tooltip-hex"></div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // global vars
+        let scene, camera, renderer;
+        let colorData = [];
+        let instancedMesh = null;
+        let orbitPoint = new THREE.Vector3(0, 0, 0);
+        let cameraDistance = 2.5;
+        let cameraAngles = { theta: 0, phi: Math.PI / 4 };
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let keys = {};
+        let selectedColor = null;
+        let selectedColorIndex = -1;
+        let targetOrbitPoint = new THREE.Vector3(0, 0, 0);
+        let targetCameraDistance = 2.5;
+        let isAnimatingOrbitPoint = false;
+        let isAnimatingDistance = false;
+
+        // scaling factors
+        const SCALE_L = 1.0;
+        const SCALE_A = 2.5;
+        const SCALE_B = 2.5;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a0a);
+
+            camera = new THREE.PerspectiveCamera(
+                75,
+                window.innerWidth / window.innerHeight,
+                0.01,
+                1000
+            );
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const pointLight = new THREE.PointLight(0xffffff, 0.8);
+            pointLight.position.set(10, 10, 10);
+            scene.add(pointLight);
+
+            const axesHelper = new THREE.AxesHelper(1);
+            scene.add(axesHelper);
+
+            setupEventListeners();
+
+            updateCameraPosition();
+        }
+
+        // update loading progress
+        function updateLoadingProgress(percent, status) {
+            const loadingBar = document.getElementById('loading-bar');
+            const loadingStatus = document.getElementById('loading-status');
+            if (loadingBar) loadingBar.style.width = percent + '%';
+            if (loadingStatus) loadingStatus.textContent = status;
+        }
+
+        // laod colours
+        async function loadColors() {
+            try {
+                updateLoadingProgress(10, 'Fetching CSV file...');
+                const response = await fetch('colors_oklab.csv');
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                updateLoadingProgress(30, 'Reading file data...');
+                const text = await response.text();
+
+                updateLoadingProgress(40, 'Parsing colors...');
+                const lines = text.split('\n');
+                const totalLines = lines.length;
+
+                // skip header
+                for (let i = 1; i < totalLines; i++) {
+                    const line = lines[i].trim();
+                    if (!line) continue;
+
+                    const parts = line.split(',');
+                    if (parts.length >= 5) {
+                        colorData.push({
+                            name: parts[0],
+                            hex: parts[1],
+                            l: parseFloat(parts[2]),
+                            a: parseFloat(parts[3]),
+                            b: parseFloat(parts[4]),
+                            flag: JSON.parse(parts[5])
+                        });
+                    }
+
+                    // update progress every 1000 lines
+                    if (i % 1000 === 0) {
+                        const progress = 40 + (i / totalLines) * 30;
+                        updateLoadingProgress(progress, `parsing colors... ${i}/${totalLines}`);
+                        // allow UI to update
+                        await new Promise(resolve => setTimeout(resolve, 0));
+                    }
+                }
+
+                updateLoadingProgress(70, `Loaded ${colorData.length} colors. creating spheres...`);
+                console.log(`loaded ${colorData.length} colors`);
+
+                await createColorSpheres();
+
+                updateLoadingProgress(100, 'Complete!');
+                setTimeout(() => {
+                    document.getElementById('loading').style.display = 'none';
+                }, 500);
+            } catch (error) {
+                console.error('Error loading colors:', error);
+                const loadingDiv = document.getElementById('loading');
+                loadingDiv.innerHTML = `
+                    <div style="color: #ff5555;">Error loading colors!</div>
+                    <div style="font-size: 14px; margin-top: 10px; color: #aaa;">
+                        ${error.message}<br><br>
+                        make sure you're running this from a local web server<br>
+                        (e.g., <code>python -m http.server 8000</code>)
+                    </div>
+                `;
+            }
+        }
+
+        // create instanced mesh for all colours
+        async function createColorSpheres() {
+            const totalColors = colorData.length;
+
+            const geometry = new THREE.SphereGeometry(0.004, 8, 6);
+
+            const material = new THREE.MeshBasicMaterial();
+
+            instancedMesh = new THREE.InstancedMesh(geometry, material, totalColors);
+
+            const dummy = new THREE.Object3D();
+            const color = new THREE.Color();
+
+            for (let i = 0; i < totalColors; i++) {
+                const colorData_item = colorData[i];
+
+                const x = colorData_item.l * SCALE_L;
+                const y = colorData_item.a * SCALE_A;
+                const z = colorData_item.b * SCALE_B;
+
+                dummy.position.set(x, y, z);
+                dummy.updateMatrix();
+                instancedMesh.setMatrixAt(i, dummy.matrix);
+
+                color.set(colorData_item.hex);
+                instancedMesh.setColorAt(i, color);
+
+                if (i % 1000 === 0) {
+                    const progress = 70 + (i / totalColors) * 30;
+                    updateLoadingProgress(progress, `creating spheres... ${i}/${totalColors}`);
+
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
+            }
+
+            instancedMesh.instanceMatrix.needsUpdate = true;
+            instancedMesh.instanceColor.needsUpdate = true;
+
+            scene.add(instancedMesh);
+
+            console.log(`created instanced mesh with ${totalColors} instances`);
+        }
+
+        function updateCameraPosition() {
+            const x = orbitPoint.x + cameraDistance * Math.sin(cameraAngles.phi) * Math.cos(cameraAngles.theta);
+            const y = orbitPoint.y + cameraDistance * Math.cos(cameraAngles.phi);
+            const z = orbitPoint.z + cameraDistance * Math.sin(cameraAngles.phi) * Math.sin(cameraAngles.theta);
+
+            camera.position.set(x, y, z);
+            camera.lookAt(orbitPoint);
+        }
+        
+        function handleColorClick(event) {
+            if (!instancedMesh) return;
+
+            const mouse = new THREE.Vector2();
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+            
+            const intersects = raycaster.intersectObject(instancedMesh);
+
+            if (intersects.length > 0) {
+                const instanceId = intersects[0].instanceId;
+                const color = colorData[instanceId];
+                jumpToColor(color, instanceId);
+            }
+        }
+
+        function jumpToColor(color, instanceId) {
+            const scaledX = color.l * SCALE_L;
+            const scaledY = color.a * SCALE_A;
+            const scaledZ = color.b * SCALE_B;
+
+            targetOrbitPoint.set(scaledX, scaledY, scaledZ);
+            targetCameraDistance = 0.2;
+            isAnimatingOrbitPoint = true;
+            isAnimatingDistance = true;
+            
+            // reset previous selection
+            if (selectedColorIndex >= 0 && instancedMesh) {
+                const dummy = new THREE.Object3D();
+                dummy.scale.set(1, 1, 1);
+                instancedMesh.getMatrixAt(selectedColorIndex, dummy.matrix);
+                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                dummy.scale.set(1, 1, 1);
+                dummy.updateMatrix();
+                instancedMesh.setMatrixAt(selectedColorIndex, dummy.matrix);
+                instancedMesh.instanceMatrix.needsUpdate = true;
+            }
+
+            // highlight the new selection
+            selectedColor = color;
+            selectedColorIndex = instanceId;
+
+            if (instancedMesh && instanceId >= 0) {
+                const dummy = new THREE.Object3D();
+                instancedMesh.getMatrixAt(instanceId, dummy.matrix);
+                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                dummy.scale.set(2.4, 2.4, 2.4);
+                dummy.updateMatrix();
+                instancedMesh.setMatrixAt(instanceId, dummy.matrix);
+                instancedMesh.instanceMatrix.needsUpdate = true;
+            }
+
+            console.log(`Selected: ${color.name} (${color.hex})`);
+        }
+
+        // smoothly moves the camera
+        // separated target variables for orbit point and distance so that
+        // the distance animation can be cancelled if we get a mouse wheel event
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isAnimatingOrbitPoint) {
+                orbitPoint.lerp(targetOrbitPoint, 0.1);
+                if (orbitPoint.distanceTo(targetOrbitPoint) < 0.001) {
+                    isAnimatingOrbitPoint = false;
+                }
+            }
+
+            if (isAnimatingDistance) {
+                cameraDistance += (targetCameraDistance - cameraDistance) * 0.1;
+                if (Math.abs(targetCameraDistance - cameraDistance) < 0.001) {
+                    isAnimatingDistance = false;
+                }
+            }
+
+            // keyboard movement
+            handleKeyboardMovement();
+
+            updateCameraPosition();
+
+            renderer.render(scene, camera);
+        }
+
+        function updateTooltip(event) {
+            if (!instancedMesh) return;
+
+            const mouse = new THREE.Vector2();
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+
+            const intersects = raycaster.intersectObject(instancedMesh);
+            
+            const tooltip = document.getElementById('tooltip');
+            const tooltipName = tooltip.querySelector('.tooltip-name');
+            const tooltipHex = tooltip.querySelector('.tooltip-hex');
+
+            if (intersects.length > 0) {
+                const instanceId = intersects[0].instanceId;
+                const color = colorData[instanceId];
+
+                tooltipName.textContent = color.name;
+                tooltipHex.textContent = color.hex;
+
+                tooltip.style.display = 'block';
+                tooltip.style.left = (event.clientX + 15) + 'px';
+                tooltip.style.top = (event.clientY + 15) + 'px';
+            } else {
+                tooltip.style.display = 'none';
+            }
+        }
+
+        function handleKeyboardMovement() {
+            const moveSpeed = 0.01;
+
+            if (keys['w'] || keys['W']) orbitPoint.z -= moveSpeed;
+            if (keys['s'] || keys['S']) orbitPoint.z += moveSpeed;
+            if (keys['a'] || keys['A']) orbitPoint.x -= moveSpeed;
+            if (keys['d'] || keys['D']) orbitPoint.x += moveSpeed;
+            if (keys[' ']) orbitPoint.y += moveSpeed;
+            if (keys['Control']) orbitPoint.y -= moveSpeed;
+        }
+
+        function setupEventListeners() {
+            // Mouse controls
+            renderer.domElement.addEventListener('mousedown', onMouseDown);
+            renderer.domElement.addEventListener('mousemove', onMouseMove);
+            renderer.domElement.addEventListener('mouseup', onMouseUp);
+            renderer.domElement.addEventListener('wheel', onMouseWheel);
+            renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
+            // Keyboard controls
+            window.addEventListener('keydown', (e) => {
+                keys[e.key] = true;
+            });
+            window.addEventListener('keyup', (e) => {
+                keys[e.key] = false;
+            });
+
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+
+            // Search
+            const searchInput = document.getElementById('search-input');
+            const searchResults = document.getElementById('search-results');
+
+            searchInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim().toLowerCase();
+
+                if (query.length < 2) {
+                    searchResults.style.display = 'none';
+                    return;
+                }
+
+                const matches = colorData.filter(color =>
+                    color.name.toLowerCase().includes(query) ||
+                    color.hex.toLowerCase().includes(query)
+                ).slice(0, 10);
+
+                if (matches.length > 0) {
+                    searchResults.innerHTML = matches.map(color => `
+                        <div class="search-result-item" data-name="${color.name}">
+                            <div class="color-swatch" style="background-color: ${color.hex}"></div>
+                            <div class="color-info">
+                                <div class="color-name">${color.name}</div>
+                                <div class="color-hex">${color.hex}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                    searchResults.style.display = 'block';
+
+                    // Add click handlers
+                    searchResults.querySelectorAll('.search-result-item').forEach(item => {
+                        item.addEventListener('click', () => {
+                            const colorName = item.getAttribute('data-name');
+                            const colorIndex = colorData.findIndex(c => c.name === colorName);
+                            if (colorIndex >= 0) {
+                                jumpToColor(colorData[colorIndex], colorIndex);
+                                searchInput.value = '';
+                                searchResults.style.display = 'none';
+                            }
+                        });
+                    });
+                } else {
+                    searchResults.style.display = 'none';
+                }
+            });
+
+            searchInput.addEventListener('blur', () => {
+                setTimeout(() => {
+                    searchResults.style.display = 'none';
+                }, 200);
+            });
+        }
+
+        // events
+
+        function onMouseDown(event) {
+            if (event.button === 2) { // Right click
+                isDragging = true;
+                previousMousePosition = { x: event.clientX, y: event.clientY };
+            } else if (event.button === 0) { // Left click
+                handleColorClick(event);
+            }
+        }
+
+        function onMouseMove(event) {
+            if (isDragging) {
+                const deltaX = event.clientX - previousMousePosition.x;
+                const deltaY = event.clientY - previousMousePosition.y;
+
+                cameraAngles.theta += deltaX * 0.005;
+                cameraAngles.phi += deltaY * 0.005;
+
+                // Clamp phi to prevent gimbal lock
+                cameraAngles.phi = Math.max(0.1, Math.min(Math.PI - 0.1, cameraAngles.phi));
+
+                previousMousePosition = { x: event.clientX, y: event.clientY };
+            } else {
+                // Handle tooltip on hover
+                updateTooltip(event);
+            }
+        }
+
+        function onMouseUp(event) {
+            if (event.button === 2) {
+                isDragging = false;
+            }
+        }
+
+        function onMouseWheel(event) {
+            event.preventDefault();
+            
+            if (isAnimatingDistance) {
+                isAnimatingDistance = false;
+            }
+            
+            const delta = event.deltaY * 0.001;
+            cameraDistance = Math.max(0.1, Math.min(10, cameraDistance + delta));
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        init();
+        loadColors();
+        animate();
+    </script>
+</body>
+</html>

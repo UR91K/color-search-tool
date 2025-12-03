@@ -1,0 +1,7 @@
+sphere size 0.1 - 5 (more space for lower values)
+cloud offset x, y, z
+culling distance - to remove spheres close to the camera, can go (slider from camera to orbit (position - sphere radius))
+outlines - OnSelected, OnAll, Off
+outline color - RGB (define), Inverted
+background color
+filter nearby colors + radius - makes a sphere around the selected colors; only colors within the sphere are shown 

@@ -161,26 +161,114 @@
             color: #aaa;
             font-size: 12px;
         }
+        #settings-menu {
+            position: absolute;
+            top: 20px;
+            right: 28px;
+            z-index: 200;
+            user-select: none;
+        }
+        #settings-toggle {
+            background: rgba(20,20,20,0.95);
+            border: 2px solid #222;
+            border-radius: 50%;
+            width: 42px;
+            height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s, border 0.2s;
+        }
+        #settings-toggle:hover {
+            background: rgba(40,40,40,1);
+            border-color: #666;
+        }
+        #settings-panel {
+            display: none;
+            position: absolute;
+            top: 52px;
+            right: 0;
+            background: rgba(23,23,23,0.97);
+            border: 1.5px solid #353535;
+            border-radius: 10px;
+            min-width: 220px;
+            padding: 18px 19px 17px 19px;
+            box-shadow: 0 7px 28px 0 rgba(0,0,0,0.17);
+            font-size: 15px;
+            color: #fff;
+        }
+        #settings-menu.open #settings-panel {
+            display: block;
+            animation: panelFadeIn 0.17s;
+        }
+        @keyframes panelFadeIn {
+            from { opacity: 0; transform: translateY(-10px);}
+            to   { opacity: 1; transform: translateY(0);}
+        }
+        .setting-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 0;
+        }
+        .setting-group label {
+            flex: 1;
+            font-size: 15px;
+        }
+        #scale-slider {
+            flex: 2;
+            accent-color: #21e1ff;
+            height: 4px;
+        }
+        #scale-value {
+            min-width: 34px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: #8cf2ff;
+        }
+
+        @media (max-width: 600px) {
+            #settings-panel { min-width: 130px; padding: 13px 11px 11px 11px;}
+        }
     </style>
 </head>
 <body>
     <div id="loading">
-        ;oading colors...
+        loading colors...
         <div id="loading-bar-container">
             <div id="loading-bar"></div>
         </div>
         <div id="loading-status">initializing...</div>
     </div>
 
-    <div id="search-container">
-        <select id="color-space-selector">
-            <option value="oklab">OKLab</option>
-            <option value="rgb">RGB</option>
-        </select>
-        <input type="text" id="search-input" placeholder="Search by name or hex code...">
-        <div id="search-results"></div>
+    <div id="search-container" style="flex-direction:column;align-items:stretch;">
+        <div style="display:flex;gap:12px;align-items:center;">
+            <select id="color-space-selector">
+                <option value="oklab">OKLab</option>
+                <option value="rgb">RGB</option>
+            </select>
+            <input type="text" id="search-input" placeholder="Search by name or hex code...">
+        </div>
+        <div id="search-results" style="margin-top:4px;"></div>
     </div>
 
+    <!-- INSERT_YOUR_CODE -->
+    <div id="settings-menu">
+        <button id="settings-toggle" title="Settings">
+            <svg id="settings-gear" xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="none" viewBox="0 0 24 24"><g stroke="#fff" stroke-width="2"><circle cx="12" cy="12" r="4" fill="none"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.05a2 2 0 1 1-2.82 2.83l-.05-.06a1.65 1.65 0 0 0-1.82-.33c-.6.25-1.25.39-1.9.39s-1.3-.14-1.9-.39a1.65 1.65 0 0 0-1.82.33l-.05.06a2 2 0 1 1-2.83-2.83l.06-.05a1.65 1.65 0 0 0 .33-1.82c-.25-.6-.39-1.25-.39-1.9s.14-1.3.39-1.9a1.65 1.65 0 0 0-.33-1.82l-.06-.05A2 2 0 1 1 5.05 5.05l.05.06a1.65 1.65 0 0 0 1.82.33c.6-.25 1.25-.39 1.9-.39s1.3.14 1.9.39a1.65 1.65 0 0 0 1.82-.33l.05-.06a2 2 0 1 1 2.83 2.83l-.06.05a1.65 1.65 0 0 0-.33 1.82c.25.6.39 1.25.39 1.9s-.14 1.3-.39 1.9Z" fill="none"/></g></svg>
+        </button>
+        <div id="settings-panel">
+            <div class="setting-group">
+                <label for="scale-slider">Sphere scale</label>
+                <input id="scale-slider" type="range" min="0.1" max="5" step="0.01" value="1" />
+                <span id="scale-value">1.00</span>
+            </div>
+        </div>
+    </div>
+
+
+    
     <div id="info">
         <strong>Controls:</strong><br>
         Right-click + drag: Orbit camera<br>
@@ -224,6 +312,7 @@
         let targetCameraDistance = 2.5;
         let isAnimatingOrbitPoint = false;
         let isAnimatingDistance = false;
+        let scale = 1.0;
 
         // current color space
         let currentColorSpace = null;
@@ -232,22 +321,28 @@
         const colorSpaces = {
             oklab: {
                 name: 'OKLab',
-                getPosition: (color) => ({
-                    x: (color.l - 0.5) * 1.0,  // L: 0-1, center at 0.5
-                    y: color.a * 2.5,          // a: already centered around 0
-                    z: color.oklab_b * 2.5     // b: already centered around 0
-                }),
+                scale: 4.0,  // Uniform scale factor for all axes
+                getPosition: (color) => {
+                    return {
+                        x: ((color.l - 0.5) * 1.0) * scale,  // L: 0-1, center at 0.5
+                        y: (color.a * 2.5) * scale,          // a: already centered around 0
+                        z: (color.oklab_b * 2.5) * scale     // b: already centered around 0
+                    };
+                },
                 scales: { x: 1.0, y: 2.5, z: 2.5 },
                 axisLabels: { x: 'L', y: 'A', z: 'B' }
             },
             rgb: {
                 name: 'RGB',
-                getPosition: (color) => ({
-                    x: color.r / 255 * 0.5,
-                    y: color.g / 255 * 0.5,
-                    z: color.b / 255 * 0.5
-                }),
-                scales: { x: 4.0, y: 4.0, z: 4.0 },
+                scale: 4.0,  // Uniform scale factor for all axes
+                getPosition: (color) => {
+                    return {
+                        x: (color.r - 127.5) / 255 * scale,  // R: 0-255, center at 127.5
+                        y: (color.g - 127.5) / 255 * scale,  // G: 0-255, center at 127.5
+                        z: (color.b - 127.5) / 255 * scale   // B: 0-255, center at 127.5
+                    };
+                },
+                scales: { x: 2.0, y: 2.0, z: 2.0 },
                 axisLabels: { x: 'R', y: 'G', z: 'B' }
             }
         };
@@ -694,6 +789,47 @@
                     setTimeout(() => {
                         document.getElementById('loading').style.display = 'none';
                     }, 500);
+                }
+            });
+
+            // Settings menu
+            const settingsMenu = document.getElementById('settings-menu');
+            const settingsToggle = document.getElementById('settings-toggle');
+            
+            settingsToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                settingsMenu.classList.toggle('open');
+            });
+
+            // Close menu when clicking outside
+            document.addEventListener('mousedown', (e) => {
+                if (!settingsMenu.contains(e.target)) {
+                    settingsMenu.classList.remove('open');
+                }
+            });
+
+            // Close menu on Escape key
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    settingsMenu.classList.remove('open');
+                }
+            });
+
+            // Scale slider
+            const scaleSlider = document.getElementById('scale-slider');
+            const scaleValue = document.getElementById('scale-value');
+            
+            // Initialize scale from slider and display
+            scale = parseFloat(scaleSlider.value);
+            scaleValue.textContent = scale.toFixed(2);
+
+            scaleSlider.addEventListener('input', async () => {
+                scale = parseFloat(scaleSlider.value);
+                scaleValue.textContent = scale.toFixed(2);
+                
+                // Update sphere positions with new scale
+                if (instancedMesh && currentColorSpace) {
+                    await updateSpherePositions();
                 }
             });
         }

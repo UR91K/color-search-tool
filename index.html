@@ -490,11 +490,13 @@
                 <label for="hide-unflagged-checkbox" style="flex: 1; cursor: pointer;">Hide 'bad' colors</label>
                 <input id="hide-unflagged-checkbox" type="checkbox" />
             </div>
+            <div class="setting-group" style="margin-top: 12px;">
+                <label for="show-axes-checkbox" style="flex: 1; cursor: pointer;">Show axes</label>
+                <input id="show-axes-checkbox" type="checkbox" />
+            </div>
         </div>
     </div>
 
-
-    
     <div id="info" class="glass-panel">
         <strong>Controls</strong>
         Right-click + drag: Orbit<br>
@@ -546,6 +548,8 @@
         let backgroundRed = 2
         let backgroundGreen = 2
         let backgroundBlue = 2
+
+        let axesHelper = null;
 
         // GPU picking setup
         let pickingMesh = null;
@@ -618,7 +622,7 @@
             pointLight.position.set(10, 10, 10);
             scene.add(pointLight);
 
-            const axesHelper = new THREE.AxesHelper(1);
+            axesHelper = new THREE.AxesHelper(1);
             scene.add(axesHelper);
 
             setupEventListeners();
@@ -1446,11 +1450,20 @@
             hideUnflaggedCheckbox.addEventListener('change', (e) => {
                 hideUnflaggedColors = e.target.checked;
                 updateUnflaggedVisibility();
-                
+
                 // Refresh search results if there's an active query
                 const query = searchInput.value.trim().toLowerCase();
                 if (query.length >= 2) {
                     updateSearchResults(query);
+                }
+            });
+
+            const showAxesCheckbox = document.getElementById('show-axes-checkbox');
+            showAxesCheckbox.checked = false; // Default to showing axes
+
+            showAxesCheckbox.addEventListener('change', (e) => {
+                if (axesHelper) {
+                    axesHelper.visible = e.target.checked;
                 }
             });
         }

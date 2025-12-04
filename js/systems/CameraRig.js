@@ -63,7 +63,6 @@ export class CameraRig {
         // get camera forward/right vectors
         const front = new THREE.Vector3();
         this.camera.getWorldDirection(front);
-        front.y = 0; // project to ground plane usually feels better, or remove this line for free-fly
         front.normalize();
 
         const right = new THREE.Vector3();
@@ -74,8 +73,6 @@ export class CameraRig {
         if (this.keys['s'] || this.keys['S']) moveDir.sub(front);
         if (this.keys['a'] || this.keys['A']) moveDir.sub(right);
         if (this.keys['d'] || this.keys['D']) moveDir.add(right);
-        if (this.keys[' '] || this.keys['Shift']) moveDir.y += 1; // Up
-        if (this.keys['Control']) moveDir.y -= 1; // Down
 
         // apply acceleration
         if (moveDir.lengthSq() > 0) {

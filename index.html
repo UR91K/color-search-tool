@@ -551,6 +551,12 @@
 
         let axesHelper = null;
 
+        // Physics
+        let velocity = new THREE.Vector3(0, 0, 0);
+        const clock = new THREE.Clock();
+        const friction = 4.0;
+        const moveAcceleration = 8.0; 
+
         // GPU picking setup
         let pickingMesh = null;
         let pickingRenderTarget = null;
@@ -1070,6 +1076,9 @@
         function animate() {
             requestAnimationFrame(animate);
 
+            const deltaTime = clock.getDelta();
+            updatePhysics(deltaTime);
+
             if (isAnimatingOrbitPoint) {
                 orbitPoint.lerp(targetOrbitPoint, 0.1);
                 if (orbitPoint.distanceTo(targetOrbitPoint) < 0.001) {
@@ -1084,12 +1093,54 @@
                 }
             }
 
-            // keyboard movement
-            handleKeyboardMovement();
-
             updateCameraPosition();
 
             renderer.render(scene, camera);
+        }
+
+        function updatePhysics(deltaTime) {
+            // --- MOVEMENT ---
+            
+            const moveDir = new THREE.Vector3(0, 0, 0);
+            
+            // Get Camera Directions
+            // We use the camera's current world direction to determine Forward
+            const front = new THREE.Vector3();
+            camera.getWorldDirection(front);
+            front.normalize();
+
+            // Calculate Right vector
+            const right = new THREE.Vector3();
+            right.crossVectors(front, new THREE.Vector3(0, 1, 0)).normalize();
+
+            // Keyboard Input (Accumulate Direction)
+            if (keys['w'] || keys['W']) moveDir.add(front);
+            if (keys['s'] || keys['S']) moveDir.sub(front);
+            if (keys['a'] || keys['A']) moveDir.sub(right);
+            if (keys['d'] || keys['D']) moveDir.add(right);
+            if (keys[' ']) moveDir.y += 1; // Up
+            if (keys['Control']) moveDir.y -= 1; // Down
+
+            // Apply Acceleration to Velocity
+            if (moveDir.lengthSq() > 0) {
+                moveDir.normalize().multiplyScalar(moveAcceleration * deltaTime);
+                velocity.add(moveDir);
+            }
+            
+            // Apply Linear Friction (Drag) - matching the C++ inspiration
+            const speed = velocity.length();
+            if (speed > 0) {
+                const drop = speed * friction * deltaTime;
+                const newSpeed = Math.max(0, speed - drop);
+                if (newSpeed !== speed) {
+                    velocity.multiplyScalar(newSpeed / speed);
+                }
+            }
+
+            // Apply Velocity to Position (OrbitPoint)
+            if (velocity.lengthSq() > 0) {
+                orbitPoint.add(velocity.clone().multiplyScalar(deltaTime));
+            }
         }
 
         // Throttle tooltip updates for performance (GPU picking is fast, but we still throttle to avoid excessive rendering)
@@ -1121,17 +1172,6 @@
             } else {
                 tooltip.style.display = 'none';
             }
-        }
-
-        function handleKeyboardMovement() {
-            const moveSpeed = 0.01;
-
-            if (keys['w'] || keys['W']) orbitPoint.z -= moveSpeed;
-            if (keys['s'] || keys['S']) orbitPoint.z += moveSpeed;
-            if (keys['a'] || keys['A']) orbitPoint.x -= moveSpeed;
-            if (keys['d'] || keys['D']) orbitPoint.x += moveSpeed;
-            if (keys[' ']) orbitPoint.y += moveSpeed;
-            if (keys['Control']) orbitPoint.y -= moveSpeed;
         }
 
         function setupEventListeners() {

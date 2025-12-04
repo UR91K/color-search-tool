@@ -138,14 +138,17 @@ export class PointCloud {
 
     // Handles the "pop" effect when selecting a color
     selectIndex(index) {
-        // 1. Reset previous selection (scale it back down)
-        if (this.selectedIndex !== -1 && this.selectedIndex !== index) {
-            this._updateSingleInstance(this.selectedIndex);
-        }
-
+        const oldIndex = this.selectedIndex;
+        
+        // 1. Update state first so logic knows what is selected
         this.selectedIndex = index;
 
-        // 2. Scale up new selection
+        // 2. Reset previous selection (scale it back down)
+        if (oldIndex !== -1 && oldIndex !== index) {
+            this._updateSingleInstance(oldIndex);
+        }
+
+        // 3. Scale up new selection
         if (this.selectedIndex !== -1) {
             this._updateSingleInstance(this.selectedIndex);
         }

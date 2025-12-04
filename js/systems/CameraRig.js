@@ -53,6 +53,9 @@ export class CameraRig {
         this.targetOrbitPoint.copy(targetPosition);
         this.targetDistance = 0.2; // Zoom in close
         
+        // Stop any existing physics momentum so we don't fight the animation
+        this.velocity.set(0, 0, 0);
+
         this.isAnimatingOrbit = true;
         this.isAnimatingDistance = true;
     }
@@ -76,12 +79,27 @@ export class CameraRig {
 
         // apply acceleration
         if (moveDir.lengthSq() > 0) {
+            // If interacting while animating, convert the animation's current "step" 
+            // into momentum so it drifts naturally instead of stopping abruptly.
+            if (this.isAnimatingOrbit) {
+                // Calculate the displacement we HAD in recent frames (reverse direction)
+                const displacement = new THREE.Vector3()
+                    .subVectors(this.orbitPoint, this.targetOrbitPoint)  // FROM target TO current (reversed!)
+                    .multiplyScalar(0.1);
+
+                // Convert displacement to velocity
+                if (deltaTime > 0.001) {
+                    const animVel = displacement.divideScalar(deltaTime);
+                    animVel.multiplyScalar(0.5);
+                    this.velocity.add(animVel);
+                }
+
+                this.isAnimatingOrbit = false;
+                this.isAnimatingDistance = false;
+            }
+
             moveDir.normalize().multiplyScalar(acceleration * deltaTime);
             this.velocity.add(moveDir);
-
-            // cancel any animations if we move during animation
-            this.isAnimatingOrbit = false;
-            this.isAnimatingDistance = false;
         }
 
         // apply friction

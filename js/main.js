@@ -44,7 +44,7 @@ function init() {
                 const space = colorSpaces[spaceName];
                 
                 // IMPORTANT: Apply the current scale slider value to the space definition
-                space.scale = currentScale * 4.0; // Assuming 4.0 is base scale
+                space.scale = currentScale; // Assuming 4.0 is base scale
 
                 ui.updateLoading(0, `Switching to ${space.name}...`);
                 document.getElementById('loading').style.display = 'block';
@@ -61,9 +61,9 @@ function init() {
             const space = colorSpaces[currentColorSpaceName];
             if (space) {
                 // Update the scaling factor in the space definition
-                space.scale = currentScale * 4.0; 
+                space.scale = currentScale; 
                 
-                // We don't show loading bar for slider drag usually, 
+                // We don't show loading bar for slider drag usually,  
                 // but updatePositions is async.
                 await pointCloud.updatePositions(space);
             }
@@ -130,7 +130,7 @@ async function loadData() {
 
         // Initial Layout
         const startSpace = colorSpaces[currentColorSpaceName];
-        startSpace.scale = currentScale * 4.0; 
+        startSpace.scale = currentScale; 
         
         await pointCloud.updatePositions(startSpace, (p, s) => ui.updateLoading(p, s));
         
@@ -143,7 +143,7 @@ async function loadData() {
 
 function animate() {
     requestAnimationFrame(animate);
-    const dt = new THREE.Clock().getDelta(); // Or keep global clock
+    const dt = clock.getDelta();
     
     if (cameraRig) cameraRig.update(dt);
     if (graphics) graphics.render();

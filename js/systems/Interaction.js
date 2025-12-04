@@ -14,6 +14,9 @@ export class Interaction {
     }
 
     _setupEventListeners() {
+        // 1. Prevent Context Menu
+        this.renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
         // 2. Click Handler (Picking)
         this.renderer.domElement.addEventListener('mousedown', (e) => {
             // Only Left Click (0). Right click is for CameraRig.

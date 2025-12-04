@@ -3,19 +3,15 @@ import { hexToRgb, indexToColor, colorToIndex, debounce, getEditDistance } from 
 import { CameraRig } from './systems/CameraRig.js';
 import { Picker } from './systems/Picker.js';
 import { Interaction } from './systems/Interaction.js';
+import { PointCloud } from './components/PointCloud.js';
 
 // global vars
 let scene, camera, renderer;
 let cameraRig;
 let picker, interaction;
-let colorData = [];
-let instancedMesh = null;
-let selectedColor = null;
-let selectedColorIndex = -1;
+let pointCloud;
 let scale = 1.0;
 let pixelThreshold = 8;
-
-let hideUnflaggedColors = false;
 
 let backgroundHue = 0;
 let backgroundSaturation = 0;
@@ -25,9 +21,6 @@ let axesHelper = null;
 
 // Physics
 const clock = new THREE.Clock();
-
-// GPU picking setup
-let pickingMesh = null;
 
 // current color space
 let currentColorSpace = null;
@@ -78,6 +71,8 @@ function init() {
     renderer.setPixelRatio(window.devicePixelRatio);
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
+    pointCloud = new PointCloud(scene);
+
     // Initialize Rig
     cameraRig = new CameraRig(camera, renderer.domElement);
 
@@ -88,12 +83,12 @@ function init() {
     interaction = new Interaction(renderer, camera, picker, {
         
         // Accessor for the interaction class to find the mesh
-        getPickingMesh: () => pickingMesh, 
-        getVisualMesh: () => instancedMesh,
+        getPickingMesh: () => pointCloud.pickingMesh, 
+        getVisualMesh: () => pointCloud.mesh,
 
         // Handle Left Click
         onSelect: (index) => {
-            const color = colorData[index];
+            const color = pointCloud.data[index];
             if (color) jumpToColor(color, index);
         },
 
@@ -101,7 +96,7 @@ function init() {
         onHover: (index, x, y) => {
             const tooltip = document.getElementById('tooltip');
             if (index >= 0) {
-                const color = colorData[index];
+                const color = pointCloud.data[index];
                 tooltip.querySelector('.tooltip-name').textContent = color.name;
                 tooltip.querySelector('.tooltip-hex').textContent = color.hex;
                 tooltip.style.display = 'block';
@@ -151,6 +146,7 @@ async function loadColors() {
         updateLoadingProgress(40, 'Parsing colors...');
         const lines = text.split('\n');
         const totalLines = lines.length;
+        const parsedColors = [];
 
         // skip header
         for (let i = 1; i < totalLines; i++) {
@@ -161,7 +157,7 @@ async function loadColors() {
             if (parts.length >= 5) {
                 const hex = parts[1];
                 const rgb = hexToRgb(hex);
-                colorData.push({
+                parsedColors.push({
                     name: parts[0],
                     hex: hex,
                     l: parseFloat(parts[2]),
@@ -183,12 +179,14 @@ async function loadColors() {
             }
         }
 
-        updateLoadingProgress(70, `Loaded ${colorData.length} colors. creating spheres...`);
-        console.log(`loaded ${colorData.length} colors`);
+        updateLoadingProgress(70, `Loaded ${parsedColors.length} colors. creating spheres...`);
+        console.log(`loaded ${parsedColors.length} colors`);
+
+        await pointCloud.init(parsedColors);
 
         // set default color space
         currentColorSpace = colorSpaces.oklab;
-        await createColorSpheres();
+        await pointCloud.updatePositions(currentColorSpace, updateLoadingProgress);
 
         updateLoadingProgress(100, 'Complete!');
         setTimeout(() => {
@@ -208,184 +206,11 @@ async function loadColors() {
     }
 }
 
-// create instanced mesh for all colours
-async function createColorSpheres() {
-    const totalColors = colorData.length;
 
-    const geometry = new THREE.SphereGeometry(0.004, 16, 12);
 
-    const material = new THREE.MeshBasicMaterial();
 
-    instancedMesh = new THREE.InstancedMesh(geometry, material, totalColors);
-    instancedMesh.frustumCulled = false;  // Disable culling - instances spread far from origin
 
-    // Create GPU picking system
-    const pickingMaterial = new THREE.MeshBasicMaterial();
-    pickingMesh = new THREE.InstancedMesh(geometry, pickingMaterial, totalColors);
-    pickingMesh.frustumCulled = false;
-    pickingMesh.visible = false; // Hidden, only rendered to pick buffer
 
-    await updateSpherePositions();
-
-    scene.add(instancedMesh);
-    scene.add(pickingMesh);
-
-    console.log(`created instanced mesh with ${totalColors} instances`);
-}
-
-// efficiently update visibility of unflagged colors
-function updateUnflaggedVisibility() {
-    if (!instancedMesh) return;
-
-    const totalColors = colorData.length;
-    const dummy = new THREE.Object3D();
-    let needsUpdate = false;
-
-    for (let i = 0; i < totalColors; i++) {
-        const colorData_item = colorData[i];
-        const shouldHide = hideUnflaggedColors && !colorData_item.flag;
-        
-        // Skip if this is the selected color (it has special scaling)
-        if (i === selectedColorIndex) continue;
-
-        // Get current matrix
-        instancedMesh.getMatrixAt(i, dummy.matrix);
-        dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-
-        // Determine target scale
-        const targetScale = shouldHide ? 0 : 1;
-        
-        // Only update if scale needs to change
-        // Using epsilon for float comparison safety
-        if (Math.abs(dummy.scale.x - targetScale) > 0.001) {
-            // If recovering from scale 0, decompose() might have produced invalid quaternion.
-            // To be safe, we recompute position and reset quaternion.
-            const pos = currentColorSpace.getPosition(colorData_item);
-            dummy.position.set(pos.x, pos.y, pos.z);
-            dummy.quaternion.identity();
-            dummy.scale.set(targetScale, targetScale, targetScale);
-            
-            dummy.updateMatrix();
-            instancedMesh.setMatrixAt(i, dummy.matrix);
-            needsUpdate = true;
-        }
-    }
-
-    // Also update picking mesh visibility
-    if (pickingMesh) {
-        for (let i = 0; i < totalColors; i++) {
-            const colorData_item = colorData[i];
-            const shouldHide = hideUnflaggedColors && !colorData_item.flag;
-            
-            if (i === selectedColorIndex) continue;
-
-            pickingMesh.getMatrixAt(i, dummy.matrix);
-            dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-
-            const targetScale = shouldHide ? 0 : 1;
-            
-            if (Math.abs(dummy.scale.x - targetScale) > 0.001) {
-                const pos = currentColorSpace.getPosition(colorData_item);
-                dummy.position.set(pos.x, pos.y, pos.z);
-                dummy.quaternion.identity();
-                dummy.scale.set(targetScale, targetScale, targetScale);
-
-                dummy.updateMatrix();
-                pickingMesh.setMatrixAt(i, dummy.matrix);
-            }
-        }
-        pickingMesh.instanceMatrix.needsUpdate = true;
-    }
-
-    if (needsUpdate) {
-        instancedMesh.instanceMatrix.needsUpdate = true;
-    }
-}
-
-// update sphere positions based on current color space
-async function updateSpherePositions() {
-    if (!instancedMesh || !currentColorSpace) return;
-
-    const totalColors = colorData.length;
-    const dummy = new THREE.Object3D();
-    const color = new THREE.Color();
-
-    for (let i = 0; i < totalColors; i++) {
-        const colorData_item = colorData[i];
-        const pos = currentColorSpace.getPosition(colorData_item);
-
-        dummy.position.set(pos.x, pos.y, pos.z);
-        // Set scale based on visibility and selection
-        if (i === selectedColorIndex) {
-            dummy.scale.set(2.4, 2.4, 2.4);
-        } else if (hideUnflaggedColors && !colorData_item.flag) {
-            dummy.scale.set(0, 0, 0);
-        } else {
-            dummy.scale.set(1, 1, 1);
-        }
-        dummy.updateMatrix();
-        
-        // Update visible mesh
-        instancedMesh.setMatrixAt(i, dummy.matrix);
-        color.set(colorData_item.hex);
-        instancedMesh.setColorAt(i, color);
-
-        // Update picking mesh with same position but ID-encoded color
-        if (pickingMesh) {
-            pickingMesh.setMatrixAt(i, dummy.matrix);
-            const idColor = indexToColor(i);
-            pickingMesh.setColorAt(i, idColor);
-        }
-
-        if (i % 1000 === 0) {
-            const progress = 70 + (i / totalColors) * 30;
-            updateLoadingProgress(progress, `updating positions... ${i}/${totalColors}`);
-
-            await new Promise(resolve => setTimeout(resolve, 0));
-        }
-    }
-
-    instancedMesh.instanceMatrix.needsUpdate = true;
-    instancedMesh.instanceColor.needsUpdate = true;
-    
-    if (pickingMesh) {
-        pickingMesh.instanceMatrix.needsUpdate = true;
-        pickingMesh.instanceColor.needsUpdate = true;
-    }
-
-    // reset selection when switching color spaces
-    if (selectedColorIndex >= 0) {
-        const dummy = new THREE.Object3D();
-        instancedMesh.getMatrixAt(selectedColorIndex, dummy.matrix);
-        dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-        // Restore scale based on visibility setting
-        const colorData_item = colorData[selectedColorIndex];
-        const targetScale = (hideUnflaggedColors && !colorData_item.flag) ? 0 : 1;
-        dummy.scale.set(targetScale, targetScale, targetScale);
-        dummy.updateMatrix();
-        instancedMesh.setMatrixAt(selectedColorIndex, dummy.matrix);
-        instancedMesh.instanceMatrix.needsUpdate = true;
-        
-        // Also update picking mesh
-        if (pickingMesh) {
-            pickingMesh.setMatrixAt(selectedColorIndex, dummy.matrix);
-            pickingMesh.instanceMatrix.needsUpdate = true;
-        }
-        
-        selectedColorIndex = -1;
-        selectedColor = null;
-    }
-
-    // reset orbit point to center
-    if (cameraRig) {
-        cameraRig.orbitPoint.set(0, 0, 0);
-        cameraRig.targetOrbitPoint.set(0, 0, 0);
-        cameraRig.distance = 2.5;
-        cameraRig.targetDistance = 2.5;
-    }
-
-    console.log(`updated positions using ${currentColorSpace.name} color space`);
-}
 
 
 
@@ -421,58 +246,15 @@ function updateSceneBackground() {
 
 
 function jumpToColor(color, instanceId) {
-    if (!currentColorSpace) return;
+    if (!currentColorSpace || !pointCloud) return;
     
-    const pos = currentColorSpace.getPosition(color);
-    const targetVec = new THREE.Vector3(pos.x, pos.y, pos.z);
-    cameraRig.flyTo(targetVec);
+    // 1. Tell PointCloud to highlight this dot
+    pointCloud.selectIndex(instanceId);
     
-    // reset previous selection
-    if (selectedColorIndex >= 0 && instancedMesh) {
-        const dummy = new THREE.Object3D();
-        instancedMesh.getMatrixAt(selectedColorIndex, dummy.matrix);
-        dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-        // Restore scale based on visibility setting
-        const colorData_item = colorData[selectedColorIndex];
-        const targetScale = (hideUnflaggedColors && !colorData_item.flag) ? 0 : 1;
-        dummy.scale.set(targetScale, targetScale, targetScale);
-        dummy.updateMatrix();
-        instancedMesh.setMatrixAt(selectedColorIndex, dummy.matrix);
-        instancedMesh.instanceMatrix.needsUpdate = true;
-        
-        // Also update picking mesh
-        if (pickingMesh) {
-            pickingMesh.setMatrixAt(selectedColorIndex, dummy.matrix);
-            pickingMesh.instanceMatrix.needsUpdate = true;
-        }
-    }
-
-    // highlight the new selection
-    selectedColor = color;
-    selectedColorIndex = instanceId;
-
-    if (instancedMesh && instanceId >= 0) {
-        const dummy = new THREE.Object3D();
-        instancedMesh.getMatrixAt(instanceId, dummy.matrix);
-        dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-        
-        // FIX: If previously hidden (scale ~0), quaternion might be invalid.
-        // Reset to safe defaults.
-        if (dummy.scale.x < 0.001) {
-            dummy.quaternion.identity();
-            dummy.position.set(pos.x, pos.y, pos.z);
-        }
-        
-        dummy.scale.set(2.4, 2.4, 2.4);
-        dummy.updateMatrix();
-        instancedMesh.setMatrixAt(instanceId, dummy.matrix);
-        instancedMesh.instanceMatrix.needsUpdate = true;
-        
-        // Also update picking mesh
-        if (pickingMesh) {
-            pickingMesh.setMatrixAt(instanceId, dummy.matrix);
-            pickingMesh.instanceMatrix.needsUpdate = true;
-        }
+    // 2. Tell CameraRig to fly to this position
+    const targetPos = pointCloud.getBounds(instanceId);
+    if (targetPos) {
+        cameraRig.flyTo(targetPos);
     }
 
     console.log(`Selected: ${color.name} (${color.hex})`);
@@ -517,10 +299,13 @@ function setupEventListeners() {
         }
 
         const lowerQuery = query.toLowerCase();
+        
+        // Use pointCloud.data
+        const data = pointCloud ? pointCloud.data : [];
 
         // 1. Strict Search (Substring)
-        let potentialMatches = colorData.filter(color => {
-            if (hideUnflaggedColors && !color.flag) return false;
+        let potentialMatches = data.filter(color => {
+            if (pointCloud && pointCloud.hideUnflagged && !color.flag) return false;
             return color.name.toLowerCase().includes(lowerQuery) ||
                    color.hex.toLowerCase().includes(lowerQuery);
         });
@@ -530,7 +315,7 @@ function setupEventListeners() {
         if (potentialMatches.length === 0) {
             isFuzzy = true;
             // Consider all colors (respecting flags)
-            potentialMatches = colorData.filter(c => !hideUnflaggedColors || c.flag);
+            potentialMatches = data.filter(c => !pointCloud || !pointCloud.hideUnflagged || c.flag);
         }
 
         // 3. Sort by Edit Distance
@@ -567,18 +352,19 @@ function setupEventListeners() {
 
             // Automatically jump to the top result
             const topColor = currentMatches[0];
-            const colorIndex = colorData.findIndex(c => c.name === topColor.name);
+            const colorIndex = data.findIndex(c => c.name === topColor.name);
             if (colorIndex >= 0) {
-                jumpToColor(colorData[colorIndex], colorIndex);
+                // Access color from data
+                jumpToColor(data[colorIndex], colorIndex);
             }
 
             // Add click handlers
             searchResults.querySelectorAll('.search-result-item').forEach(item => {
                 item.addEventListener('click', () => {
                     const colorName = item.getAttribute('data-name');
-                    const colorIndex = colorData.findIndex(c => c.name === colorName);
+                    const colorIndex = data.findIndex(c => c.name === colorName);
                     if (colorIndex >= 0) {
-                        jumpToColor(colorData[colorIndex], colorIndex);
+                        jumpToColor(data[colorIndex], colorIndex);
                         searchInput.value = '';
                         searchResults.style.display = 'none';
                         currentMatches = [];
@@ -614,9 +400,10 @@ function setupEventListeners() {
                 // jump to the newly selected color
                 if (currentSelectedIndex >= 0 && currentSelectedIndex < currentMatches.length) {
                     const selectedColor = currentMatches[currentSelectedIndex];
-                    const colorIndex = colorData.findIndex(c => c.name === selectedColor.name);
+                    const data = pointCloud ? pointCloud.data : [];
+                    const colorIndex = data.findIndex(c => c.name === selectedColor.name);
                     if (colorIndex >= 0) {
-                        jumpToColor(colorData[colorIndex], colorIndex);
+                        jumpToColor(data[colorIndex], colorIndex);
                     }
                 }
                 break;
@@ -628,9 +415,10 @@ function setupEventListeners() {
                 // Jump to the newly selected color
                 if (currentSelectedIndex >= 0 && currentSelectedIndex < currentMatches.length) {
                     const selectedColor = currentMatches[currentSelectedIndex];
-                    const colorIndex = colorData.findIndex(c => c.name === selectedColor.name);
+                    const data = pointCloud ? pointCloud.data : [];
+                    const colorIndex = data.findIndex(c => c.name === selectedColor.name);
                     if (colorIndex >= 0) {
-                        jumpToColor(colorData[colorIndex], colorIndex);
+                        jumpToColor(data[colorIndex], colorIndex);
                     }
                 }
                 break;
@@ -638,9 +426,10 @@ function setupEventListeners() {
                 e.preventDefault();
                 if (currentSelectedIndex >= 0 && currentSelectedIndex < currentMatches.length) {
                     const selectedColor = currentMatches[currentSelectedIndex];
-                    const colorIndex = colorData.findIndex(c => c.name === selectedColor.name);
+                    const data = pointCloud ? pointCloud.data : [];
+                    const colorIndex = data.findIndex(c => c.name === selectedColor.name);
                     if (colorIndex >= 0) {
-                        jumpToColor(colorData[colorIndex], colorIndex);
+                        jumpToColor(data[colorIndex], colorIndex);
                         searchInput.value = '';
                         searchResults.style.display = 'none';
                         currentMatches = [];
@@ -714,7 +503,11 @@ function setupEventListeners() {
                 currentColorSpace = colorSpaces[selectedSpace];
                 document.getElementById('loading').style.display = 'block';
                 updateLoadingProgress(0, `Switching to ${currentColorSpace.name}...`);
-                await updateSpherePositions();
+                
+                if (pointCloud) {
+                    await pointCloud.updatePositions(currentColorSpace, updateLoadingProgress);
+                }
+                
                 updateLoadingProgress(100, 'Complete!');
                 setTimeout(() => {
                     document.getElementById('loading').style.display = 'none';
@@ -766,8 +559,8 @@ function setupEventListeners() {
         scaleValue.textContent = scale.toFixed(2);
 
         // Update sphere positions with new scale
-        if (instancedMesh && currentColorSpace) {
-            await updateSpherePositions();
+        if (pointCloud && currentColorSpace) {
+            await pointCloud.updatePositions(currentColorSpace);
         }
     });
 
@@ -810,11 +603,13 @@ function setupEventListeners() {
 
     // Hide unflagged colors checkbox
     const hideUnflaggedCheckbox = document.getElementById('hide-unflagged-checkbox');
-    hideUnflaggedCheckbox.checked = hideUnflaggedColors;
+    // hideUnflaggedColors is removed, check checkbox state directly or from pointCloud
+    hideUnflaggedCheckbox.checked = false; // Default
     
     hideUnflaggedCheckbox.addEventListener('change', (e) => {
-        hideUnflaggedColors = e.target.checked;
-        updateUnflaggedVisibility();
+        if (pointCloud) {
+            pointCloud.updateVisibility(e.target.checked);
+        }
 
         // Refresh search results if there's an active query
         const query = searchInput.value.trim().toLowerCase();

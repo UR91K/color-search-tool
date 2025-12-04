@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-"""Simple HTTP server for the Oklab color explorer"""
-
 import http.server
 import socketserver
 

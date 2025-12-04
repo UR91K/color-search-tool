@@ -14,13 +14,6 @@ export class Interaction {
     }
 
     _setupEventListeners() {
-        // 1. Resize Handler
-        window.addEventListener('resize', () => {
-            this.camera.aspect = window.innerWidth / window.innerHeight;
-            this.camera.updateProjectionMatrix();
-            this.renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
         // 2. Click Handler (Picking)
         this.renderer.domElement.addEventListener('mousedown', (e) => {
             // Only Left Click (0). Right click is for CameraRig.

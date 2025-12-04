@@ -171,7 +171,9 @@ function animate() {
 
 function setupEventListeners() {
     // Mouse controls
-    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+    if (graphics && graphics.renderer) {
+        graphics.renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
 
     // Search
     const searchInput = document.getElementById('search-input');

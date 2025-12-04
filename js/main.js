@@ -4,20 +4,11 @@ import { CameraRig } from 'systems/CameraRig.js';
 
 // global vars
 let scene, camera, renderer;
+let cameraRig;
 let colorData = [];
 let instancedMesh = null;
-let orbitPoint = new THREE.Vector3(0, 0, 0);
-let cameraDistance = 2.5;
-let cameraAngles = { theta: 0, phi: Math.PI / 4 };
-let isDragging = false;
-let previousMousePosition = { x: 0, y: 0 };
-let keys = {};
 let selectedColor = null;
 let selectedColorIndex = -1;
-let targetOrbitPoint = new THREE.Vector3(0, 0, 0);
-let targetCameraDistance = 2.5;
-let isAnimatingOrbitPoint = false;
-let isAnimatingDistance = false;
 let scale = 1.0;
 let pixelThreshold = 8;
 
@@ -30,10 +21,7 @@ let backgroundValue = 3;
 let axesHelper = null;
 
 // Physics
-let velocity = new THREE.Vector3(0, 0, 0);
-const clock = new THREE.Clock();
-const friction = 4.0;
-const moveAcceleration = 4.0; 
+const clock = new THREE.Clock(); 
 
 // GPU picking setup
 let pickingMesh = null;
@@ -89,6 +77,9 @@ function init() {
     renderer.setPixelRatio(window.devicePixelRatio);
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
+    // Initialize Rig
+    cameraRig = new CameraRig(camera, renderer.domElement);
+
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
 
@@ -101,8 +92,6 @@ function init() {
     scene.add(axesHelper);
 
     setupEventListeners();
-
-    updateCameraPosition();
 }
 
 // update loading progress
@@ -356,22 +345,17 @@ async function updateSpherePositions() {
     }
 
     // reset orbit point to center
-    orbitPoint.set(0, 0, 0);
-    targetOrbitPoint.set(0, 0, 0);
-    cameraDistance = 2.5;
-    targetCameraDistance = 2.5;
+    if (cameraRig) {
+        cameraRig.orbitPoint.set(0, 0, 0);
+        cameraRig.targetOrbitPoint.set(0, 0, 0);
+        cameraRig.distance = 2.5;
+        cameraRig.targetDistance = 2.5;
+    }
 
     console.log(`updated positions using ${currentColorSpace.name} color space`);
 }
 
-function updateCameraPosition() {
-    const x = orbitPoint.x + cameraDistance * Math.sin(cameraAngles.phi) * Math.cos(cameraAngles.theta);
-    const y = orbitPoint.y + cameraDistance * Math.cos(cameraAngles.phi);
-    const z = orbitPoint.z + cameraDistance * Math.sin(cameraAngles.phi) * Math.sin(cameraAngles.theta);
 
-    camera.position.set(x, y, z);
-    camera.lookAt(orbitPoint);
-}
 
 function updateSceneBackground() {
     if (scene) {
@@ -483,10 +467,8 @@ function jumpToColor(color, instanceId) {
     if (!currentColorSpace) return;
     
     const pos = currentColorSpace.getPosition(color);
-    targetOrbitPoint.set(pos.x, pos.y, pos.z);
-    targetCameraDistance = 0.2;
-    isAnimatingOrbitPoint = true;
-    isAnimatingDistance = true;
+    const targetVec = new THREE.Vector3(pos.x, pos.y, pos.z);
+    cameraRig.flyTo(targetVec);
     
     // reset previous selection
     if (selectedColorIndex >= 0 && instancedMesh) {
@@ -546,71 +528,15 @@ function animate() {
     requestAnimationFrame(animate);
 
     const deltaTime = clock.getDelta();
-    updatePhysics(deltaTime);
 
-    if (isAnimatingOrbitPoint) {
-        orbitPoint.lerp(targetOrbitPoint, 0.1);
-        if (orbitPoint.distanceTo(targetOrbitPoint) < 0.001) {
-            isAnimatingOrbitPoint = false;
-        }
+    if (cameraRig) {
+        cameraRig.update(deltaTime);
     }
-
-    if (isAnimatingDistance) {
-        cameraDistance += (targetCameraDistance - cameraDistance) * 0.1;
-        if (Math.abs(targetCameraDistance - cameraDistance) < 0.001) {
-            isAnimatingDistance = false;
-        }
-    }
-
-    updateCameraPosition();
 
     renderer.render(scene, camera);
 }
 
-function updatePhysics(deltaTime) {
-    // --- MOVEMENT ---
-    
-    const moveDir = new THREE.Vector3(0, 0, 0);
-    
-    // Get Camera Directions
-    // We use the camera's current world direction to determine Forward
-    const front = new THREE.Vector3();
-    camera.getWorldDirection(front);
-    front.normalize();
 
-    // Calculate Right vector
-    const right = new THREE.Vector3();
-    right.crossVectors(front, new THREE.Vector3(0, 1, 0)).normalize();
-
-    // Keyboard Input (Accumulate Direction)
-    if (keys['w'] || keys['W']) moveDir.add(front);
-    if (keys['s'] || keys['S']) moveDir.sub(front);
-    if (keys['a'] || keys['A']) moveDir.sub(right);
-    if (keys['d'] || keys['D']) moveDir.add(right);
-    if (keys[' ']) moveDir.y += 1; // Up
-    if (keys['Control']) moveDir.y -= 1; // Down
-
-    // Apply Acceleration to Velocity
-    if (moveDir.lengthSq() > 0) {
-        moveDir.normalize().multiplyScalar(moveAcceleration * deltaTime);
-        velocity.add(moveDir);
-    }
-    
-    // Apply Linear Friction (Drag) - matching the C++ inspiration
-    const speed = velocity.length();
-    if (speed > 0) {
-        const drop = speed * friction * deltaTime;
-        const newSpeed = Math.max(0, speed - drop);
-        if (newSpeed !== speed) {
-            velocity.multiplyScalar(newSpeed / speed);
-        }
-    }
-
-    // Apply Velocity to Position (OrbitPoint)
-    if (velocity.lengthSq() > 0) {
-        orbitPoint.add(velocity.clone().multiplyScalar(deltaTime));
-    }
-}
 
 // Throttle tooltip updates for performance (GPU picking is fast, but we still throttle to avoid excessive rendering)
 let lastTooltipUpdate = 0;
@@ -647,17 +573,7 @@ function setupEventListeners() {
     // Mouse controls
     renderer.domElement.addEventListener('mousedown', onMouseDown);
     renderer.domElement.addEventListener('mousemove', onMouseMove);
-    renderer.domElement.addEventListener('mouseup', onMouseUp);
-    renderer.domElement.addEventListener('wheel', onMouseWheel);
     renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-
-    // Keyboard controls
-    window.addEventListener('keydown', (e) => {
-        keys[e.key] = true;
-    });
-    window.addEventListener('keyup', (e) => {
-        keys[e.key] = false;
-    });
 
     // Window resize
     window.addEventListener('resize', onWindowResize);
@@ -998,49 +914,17 @@ function setupEventListeners() {
 // events
 
 function onMouseDown(event) {
-    if (event.button === 2) { // Right click
-        isDragging = true;
-        previousMousePosition = { x: event.clientX, y: event.clientY };
-    } else if (event.button === 0) { // Left click
+    if (event.button === 0) { // Left click
         handleColorClick(event);
     }
 }
 
 function onMouseMove(event) {
-    if (isDragging) {
-        const deltaX = event.clientX - previousMousePosition.x;
-        const deltaY = event.clientY - previousMousePosition.y;
-
-        cameraAngles.theta += deltaX * 0.005;
-        cameraAngles.phi += deltaY * 0.005;
-
-        // Clamp phi to prevent gimbal lock
-        cameraAngles.phi = Math.max(0.1, Math.min(Math.PI - 0.1, cameraAngles.phi));
-
-        previousMousePosition = { x: event.clientX, y: event.clientY };
-    } else {
-        // Handle tooltip on hover
-        updateTooltip(event);
-    }
+    // Handle tooltip on hover
+    updateTooltip(event);
 }
 
-function onMouseUp(event) {
-    if (event.button === 2) {
-        isDragging = false;
-    }
-}
 
-function onMouseWheel(event) {
-    event.preventDefault();
-    
-    if (isAnimatingDistance) {
-        isAnimatingDistance = false;
-    }
-    
-    const delta = event.deltaY * 0.001;
-    cameraDistance = Math.max(0.1, Math.min(10, cameraDistance + delta));
-    moveAcceleration = cameraDistance * 0.1;
-}
 
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;

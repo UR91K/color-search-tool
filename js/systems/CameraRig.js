@@ -60,16 +60,16 @@ export class CameraRig {
     _updatePhysics(deltaTime, acceleration) {
         const moveDir = new THREE.Vector3(0, 0, 0);
 
-        // Get Camera Forward/Right vectors (ignoring Y tilt for movement consistency)
+        // get camera forward/right vectors
         const front = new THREE.Vector3();
         this.camera.getWorldDirection(front);
-        front.y = 0; // Project to ground plane usually feels better, or remove this line for free-fly
+        front.y = 0; // project to ground plane usually feels better, or remove this line for free-fly
         front.normalize();
 
         const right = new THREE.Vector3();
         right.crossVectors(front, new THREE.Vector3(0, 1, 0)).normalize();
 
-        // Keyboard Input
+        // keyboard inputs
         if (this.keys['w'] || this.keys['W']) moveDir.add(front);
         if (this.keys['s'] || this.keys['S']) moveDir.sub(front);
         if (this.keys['a'] || this.keys['A']) moveDir.sub(right);
@@ -77,13 +77,17 @@ export class CameraRig {
         if (this.keys[' '] || this.keys['Shift']) moveDir.y += 1; // Up
         if (this.keys['Control']) moveDir.y -= 1; // Down
 
-        // Apply Acceleration
+        // apply acceleration
         if (moveDir.lengthSq() > 0) {
             moveDir.normalize().multiplyScalar(acceleration * deltaTime);
             this.velocity.add(moveDir);
+
+            // cancel any animations if we move during animation
+            this.isAnimatingOrbit = false;
+            this.isAnimatingDistance = false;
         }
 
-        // Apply Friction
+        // apply friction
         const speed = this.velocity.length();
         if (speed > 0) {
             const drop = speed * this.friction * deltaTime;
@@ -93,14 +97,14 @@ export class CameraRig {
             }
         }
 
-        // Apply Velocity
+        // apply velocity
         if (this.velocity.lengthSq() > 0) {
             this.orbitPoint.add(this.velocity.clone().multiplyScalar(deltaTime));
         }
     }
 
     _updateAnimations() {
-        // Smoothly interpolate orbit point
+        // smoothly interpolate orbit point
         if (this.isAnimatingOrbit) {
             this.orbitPoint.lerp(this.targetOrbitPoint, 0.1);
             if (this.orbitPoint.distanceTo(this.targetOrbitPoint) < 0.001) {
@@ -108,7 +112,7 @@ export class CameraRig {
             }
         }
 
-        // Smoothly interpolate distance
+        // smoothly interpolate distance
         if (this.isAnimatingDistance) {
             this.distance += (this.targetDistance - this.distance) * 0.1;
             if (Math.abs(this.targetDistance - this.distance) < 0.001) {

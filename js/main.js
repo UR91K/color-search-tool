@@ -3,21 +3,16 @@ import { debounce, getEditDistance } from './utils.js';
 import { CameraRig } from './systems/CameraRig.js';
 import { Picker } from './systems/Picker.js';
 import { Interaction } from './systems/Interaction.js';
+import { Renderer } from './systems/Renderer.js';
 import { PointCloud } from './components/PointCloud.js';
 import { ColorLoader } from './data/ColorLoader.js';
 
-let scene, camera, renderer;
+let graphics;
 let cameraRig;
 let picker, interaction;
 let pointCloud;
 let scale = 1.0;
 let pixelThreshold = 8;
-
-let backgroundHue = 0;
-let backgroundSaturation = 0;
-let backgroundValue = 3;
-
-let axesHelper = null;
 
 const clock = new THREE.Clock();
 
@@ -53,31 +48,22 @@ const colorSpaces = {
 };
 
 function init() {
-    scene = new THREE.Scene();
-    updateSceneBackground();
+    // 1. Initialize Renderer System
+    graphics = new Renderer('canvas-container');
 
-    camera = new THREE.PerspectiveCamera(
-        75,
-        window.innerWidth / window.innerHeight,
-        0.01,
-        1000
-    );
-
-    renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    document.getElementById('canvas-container').appendChild(renderer.domElement);
-
-    pointCloud = new PointCloud(scene);
-
-    // Initialize Rig
-    cameraRig = new CameraRig(camera, renderer.domElement);
-
-    // 1. Initialize Picker
-    picker = new Picker(renderer, scene, camera);
-
-    // 2. Initialize Interaction
-    interaction = new Interaction(renderer, camera, picker, {
+    // 2. Setup Modules (Pass graphics.scene, graphics.camera, etc.)
+    
+    // CameraRig needs the actual camera object and the canvas
+    cameraRig = new CameraRig(graphics.camera, graphics.renderer.domElement);
+    
+    // PointCloud needs the scene to add meshes to
+    pointCloud = new PointCloud(graphics.scene);
+    
+    // Picker needs the renderer, scene, and camera
+    picker = new Picker(graphics.renderer, graphics.scene, graphics.camera);
+    
+    // Interaction needs renderer, camera, picker
+    interaction = new Interaction(graphics.renderer, graphics.camera, picker, {
         
         // Accessor for the interaction class to find the mesh
         getPickingMesh: () => pointCloud.pickingMesh, 
@@ -104,17 +90,6 @@ function init() {
             }
         }
     });
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    scene.add(ambientLight);
-
-    const pointLight = new THREE.PointLight(0xffffff, 0.8);
-    pointLight.position.set(10, 10, 10);
-    scene.add(pointLight);
-
-    axesHelper = new THREE.AxesHelper(1);
-    axesHelper.visible = false; // Hidden by default
-    scene.add(axesHelper);
 
     setupEventListeners();
 }
@@ -165,32 +140,7 @@ async function loadColors() {
     }
 }
 
-function updateSceneBackground() {
-    if (scene) {
-        const h = backgroundHue / 360;
-        const s = backgroundSaturation / 100;
-        const v = backgroundValue / 100;
-        
-        // HSV to RGB conversion
-        const i = Math.floor(h * 6);
-        const f = h * 6 - i;
-        const p = v * (1 - s);
-        const q = v * (1 - f * s);
-        const t = v * (1 - (1 - f) * s);
-        
-        let r, g, b;
-        switch (i % 6) {
-            case 0: r = v; g = t; b = p; break;
-            case 1: r = q; g = v; b = p; break;
-            case 2: r = p; g = v; b = t; break;
-            case 3: r = p; g = q; b = v; break;
-            case 4: r = t; g = p; b = v; break;
-            case 5: r = v; g = p; b = q; break;
-        }
-        
-        scene.background = new THREE.Color(r, g, b);
-    }
-}
+
 
 function jumpToColor(color, instanceId) {
     if (!currentColorSpace || !pointCloud) return;
@@ -216,7 +166,7 @@ function animate() {
         cameraRig.update(deltaTime);
     }
 
-    renderer.render(scene, camera);
+    if (graphics) graphics.render();
 }
 
 function setupEventListeners() {
@@ -513,32 +463,29 @@ function setupEventListeners() {
     const backgroundValueDisplay = document.getElementById('background-value-value');
 
     // Initialize background values from sliders and display
-    backgroundHue = parseInt(backgroundHueSlider.value);
-    backgroundSaturation = parseInt(backgroundSaturationSlider.value);
-    backgroundValue = parseInt(backgroundValueSlider.value);
-    backgroundHueDisplay.textContent = backgroundHue;
-    backgroundSaturationDisplay.textContent = backgroundSaturation;
-    backgroundValueDisplay.textContent = backgroundValue;
+    backgroundHueDisplay.textContent = parseInt(backgroundHueSlider.value);
+    backgroundSaturationDisplay.textContent = parseInt(backgroundSaturationSlider.value);
+    backgroundValueDisplay.textContent = parseInt(backgroundValueSlider.value);
 
     // Update scene background
-    updateSceneBackground();
+    if (graphics) graphics.setBackground(parseInt(backgroundHueSlider.value), parseInt(backgroundSaturationSlider.value), parseInt(backgroundValueSlider.value));
 
     backgroundHueSlider.addEventListener('input', () => {
-        backgroundHue = parseInt(backgroundHueSlider.value);
-        backgroundHueDisplay.textContent = backgroundHue;
-        updateSceneBackground();
+        const h = parseInt(backgroundHueSlider.value);
+        backgroundHueDisplay.textContent = h;
+        if (graphics) graphics.setBackground(h, parseInt(backgroundSaturationSlider.value), parseInt(backgroundValueSlider.value));
     });
 
     backgroundSaturationSlider.addEventListener('input', () => {
-        backgroundSaturation = parseInt(backgroundSaturationSlider.value);
-        backgroundSaturationDisplay.textContent = backgroundSaturation;
-        updateSceneBackground();
+        const s = parseInt(backgroundSaturationSlider.value);
+        backgroundSaturationDisplay.textContent = s;
+        if (graphics) graphics.setBackground(parseInt(backgroundHueSlider.value), s, parseInt(backgroundValueSlider.value));
     });
 
     backgroundValueSlider.addEventListener('input', () => {
-        backgroundValue = parseInt(backgroundValueSlider.value);
-        backgroundValueDisplay.textContent = backgroundValue;
-        updateSceneBackground();
+        const v = parseInt(backgroundValueSlider.value);
+        backgroundValueDisplay.textContent = v;
+        if (graphics) graphics.setBackground(parseInt(backgroundHueSlider.value), parseInt(backgroundSaturationSlider.value), v);
     });
 
     // Hide unflagged colors checkbox
@@ -560,11 +507,11 @@ function setupEventListeners() {
 
     const showAxesCheckbox = document.getElementById('show-axes-checkbox');
     showAxesCheckbox.checked = false;
-    if (axesHelper) axesHelper.visible = false;
+    if (graphics) graphics.setAxesVisibility(false);
 
     showAxesCheckbox.addEventListener('change', (e) => {
-        if (axesHelper) {
-            axesHelper.visible = e.target.checked;
+        if (graphics) {
+            graphics.setAxesVisibility(e.target.checked);
         }
     });
 }

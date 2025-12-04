@@ -623,6 +623,7 @@
             scene.add(pointLight);
 
             axesHelper = new THREE.AxesHelper(1);
+            axesHelper.visible = false; // Hidden by default
             scene.add(axesHelper);
 
             setupEventListeners();
@@ -1459,7 +1460,8 @@
             });
 
             const showAxesCheckbox = document.getElementById('show-axes-checkbox');
-            showAxesCheckbox.checked = false; // Default to showing axes
+            showAxesCheckbox.checked = false;
+            if (axesHelper) axesHelper.visible = false;
 
             showAxesCheckbox.addEventListener('change', (e) => {
                 if (axesHelper) {

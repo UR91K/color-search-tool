@@ -1,12 +1,11 @@
 import * as THREE from 'three';
-import { indexToColor, colorToIndex, debounce, getEditDistance } from './utils.js';
+import { debounce, getEditDistance } from './utils.js';
 import { CameraRig } from './systems/CameraRig.js';
 import { Picker } from './systems/Picker.js';
 import { Interaction } from './systems/Interaction.js';
 import { PointCloud } from './components/PointCloud.js';
 import { ColorLoader } from './data/ColorLoader.js';
 
-// global vars
 let scene, camera, renderer;
 let cameraRig;
 let picker, interaction;
@@ -20,13 +19,10 @@ let backgroundValue = 3;
 
 let axesHelper = null;
 
-// Physics
 const clock = new THREE.Clock();
 
-// current color space
 let currentColorSpace = null;
 
-// color space definitions
 const colorSpaces = {
     oklab: {
         name: 'Oklab',
@@ -123,7 +119,6 @@ function init() {
     setupEventListeners();
 }
 
-// update loading progress
 function updateLoadingProgress(percent, status) {
     const loadingBar = document.getElementById('loading-bar');
     const loadingStatus = document.getElementById('loading-status');
@@ -131,7 +126,6 @@ function updateLoadingProgress(percent, status) {
     if (loadingStatus) loadingStatus.textContent = status;
 }
 
-// laod colours
 async function loadColors() {
     try {
         // 1. Fetch and Parse (using the new Loader)
@@ -213,9 +207,6 @@ function jumpToColor(color, instanceId) {
     console.log(`Selected: ${color.name} (${color.hex})`);
 }
 
-// smoothly moves the camera
-// separated target variables for orbit point and distance so that
-// the distance animation can be cancelled if we get a mouse wheel event
 function animate() {
     requestAnimationFrame(animate);
 

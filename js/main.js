@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { hexToRgb, indexToColor, colorToIndex, debounce, getEditDistance } from './utils.js';
+import { indexToColor, colorToIndex, debounce, getEditDistance } from './utils.js';
 import { CameraRig } from './systems/CameraRig.js';
 import { Picker } from './systems/Picker.js';
 import { Interaction } from './systems/Interaction.js';
 import { PointCloud } from './components/PointCloud.js';
+import { ColorLoader } from './data/ColorLoader.js';
 
 // global vars
 let scene, camera, renderer;
@@ -133,76 +134,40 @@ function updateLoadingProgress(percent, status) {
 // laod colours
 async function loadColors() {
     try {
-        updateLoadingProgress(10, 'Fetching CSV file...');
-        const response = await fetch('../data/colors_oklab.csv');
+        // 1. Fetch and Parse (using the new Loader)
+        const data = await ColorLoader.load('../data/colors_oklab.csv', updateLoadingProgress);
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+        updateLoadingProgress(70, `Loaded ${data.length} colors. Creating spheres...`);
+        console.log(`Loaded ${data.length} colors`);
+
+        // 2. Initialize the Point Cloud
+        if (pointCloud) {
+            pointCloud.init(data);
+
+            // 3. Set Initial Positions
+            currentColorSpace = colorSpaces.oklab; 
+            await pointCloud.updatePositions(currentColorSpace, updateLoadingProgress);
         }
 
-        updateLoadingProgress(30, 'Reading file data...');
-        const text = await response.text();
-
-        updateLoadingProgress(40, 'Parsing colors...');
-        const lines = text.split('\n');
-        const totalLines = lines.length;
-        const parsedColors = [];
-
-        // skip header
-        for (let i = 1; i < totalLines; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-
-            const parts = line.split(',');
-            if (parts.length >= 5) {
-                const hex = parts[1];
-                const rgb = hexToRgb(hex);
-                parsedColors.push({
-                    name: parts[0],
-                    hex: hex,
-                    l: parseFloat(parts[2]),
-                    a: parseFloat(parts[3]),
-                    oklab_b: parseFloat(parts[4]),
-                    r: rgb.r,
-                    g: rgb.g,
-                    b: rgb.b,
-                    flag: JSON.parse(parts[5]),
-                });
-            }
-
-            // update progress every 1000 lines
-            if (i % 1000 === 0) {
-                const progress = 40 + (i / totalLines) * 30;
-                updateLoadingProgress(progress, `parsing colors... ${i}/${totalLines}`);
-                // allow UI to update
-                await new Promise(resolve => setTimeout(resolve, 0));
-            }
-        }
-
-        updateLoadingProgress(70, `Loaded ${parsedColors.length} colors. creating spheres...`);
-        console.log(`loaded ${parsedColors.length} colors`);
-
-        await pointCloud.init(parsedColors);
-
-        // set default color space
-        currentColorSpace = colorSpaces.oklab;
-        await pointCloud.updatePositions(currentColorSpace, updateLoadingProgress);
-
+        // 4. Cleanup UI
         updateLoadingProgress(100, 'Complete!');
         setTimeout(() => {
-            document.getElementById('loading').style.display = 'none';
+            const loadingEl = document.getElementById('loading');
+            if(loadingEl) loadingEl.style.display = 'none';
         }, 500);
+
     } catch (error) {
         console.error('Error loading colors:', error);
         const loadingDiv = document.getElementById('loading');
-        loadingDiv.innerHTML = `
-            <div style="color: #ff5555;">Error loading colors!</div>
-            <div style="font-size: 14px; margin-top: 10px; color: #aaa;">
-                ${error.message}<br><br>
-                make sure you're running this from a local web server<br>
-                (e.g., <code>python -m http.server 8000</code>)
-            </div>
-        `;
+        if (loadingDiv) {
+            loadingDiv.innerHTML = `
+                <div style="color: #ff5555;">Error loading colors!</div>
+                <div style="font-size: 14px; margin-top: 10px; color: #aaa;">
+                    ${error.message}<br><br>
+                    Make sure you are running a local server.
+                </div>
+            `;
+        }
     }
 }
 

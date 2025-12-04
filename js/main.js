@@ -171,14 +171,6 @@ async function loadColors() {
     }
 }
 
-
-
-
-
-
-
-
-
 function updateSceneBackground() {
     if (scene) {
         const h = backgroundHue / 360;
@@ -205,10 +197,6 @@ function updateSceneBackground() {
         scene.background = new THREE.Color(r, g, b);
     }
 }
-
-
-
-
 
 function jumpToColor(color, instanceId) {
     if (!currentColorSpace || !pointCloud) return;
@@ -239,10 +227,6 @@ function animate() {
 
     renderer.render(scene, camera);
 }
-
-
-
-
 
 function setupEventListeners() {
     // Mouse controls
@@ -593,10 +577,6 @@ function setupEventListeners() {
         }
     });
 }
-
-// events
-
-
 
 init();
 loadColors();

@@ -555,7 +555,7 @@
         let velocity = new THREE.Vector3(0, 0, 0);
         const clock = new THREE.Clock();
         const friction = 4.0;
-        const moveAcceleration = 8.0; 
+        const moveAcceleration = 4.0; 
 
         // GPU picking setup
         let pickingMesh = null;
@@ -1212,35 +1212,31 @@
                 };
             }
 
-            // Levenshtein distance for sorting
+            // Levenshtein distance for sorting (optimized O(min(m,n)) space)
             function getEditDistance(a, b) {
                 if (a.length === 0) return b.length;
                 if (b.length === 0) return a.length;
 
-                const matrix = [];
+                if (a.length > b.length) [a, b] = [b, a];
 
-                for (let i = 0; i <= b.length; i++) {
-                    matrix[i] = [i];
-                }
-
-                for (let j = 0; j <= a.length; j++) {
-                    matrix[0][j] = j;
-                }
+                const row = [];
+                for (let i = 0; i <= a.length; i++) row[i] = i;
 
                 for (let i = 1; i <= b.length; i++) {
+                    let prev = i;
                     for (let j = 1; j <= a.length; j++) {
+                        let val;
                         if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                            matrix[i][j] = matrix[i - 1][j - 1];
+                            val = row[j - 1];
                         } else {
-                            matrix[i][j] = Math.min(
-                                matrix[i - 1][j - 1] + 1,
-                                Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
-                            );
+                            val = Math.min(row[j - 1] + 1, Math.min(prev + 1, row[j] + 1));
                         }
+                        row[j - 1] = prev;
+                        prev = val;
                     }
+                    row[a.length] = prev;
                 }
-
-                return matrix[b.length][a.length];
+                return row[a.length];
             }
 
             // Update search results
@@ -1252,30 +1248,41 @@
                     return;
                 }
 
-                currentMatches = colorData.filter(color => {
+                const lowerQuery = query.toLowerCase();
+
+                // 1. Strict Search (Substring)
+                let potentialMatches = colorData.filter(color => {
                     if (hideUnflaggedColors && !color.flag) return false;
-                    
-                    return color.name.toLowerCase().includes(query) ||
-                           color.hex.toLowerCase().includes(query);
+                    return color.name.toLowerCase().includes(lowerQuery) ||
+                           color.hex.toLowerCase().includes(lowerQuery);
                 });
 
-                // Sort by edit distance
-                currentMatches.sort((a, b) => {
-                    const distA = Math.min(
-                        getEditDistance(query, a.name.toLowerCase()),
-                        getEditDistance(query, a.hex.toLowerCase())
-                    );
-                    const distB = Math.min(
-                        getEditDistance(query, b.name.toLowerCase()),
-                        getEditDistance(query, b.hex.toLowerCase())
-                    );
-                    return distA - distB;
-                });
-
-                // Limit to top 100 for performance
-                if (currentMatches.length > 100) {
-                    currentMatches = currentMatches.slice(0, 100);
+                // 2. Fallback to Fuzzy Search if no strict matches
+                let isFuzzy = false;
+                if (potentialMatches.length === 0) {
+                    isFuzzy = true;
+                    // Consider all colors (respecting flags)
+                    potentialMatches = colorData.filter(c => !hideUnflaggedColors || c.flag);
                 }
+
+                // 3. Sort by Edit Distance
+                // We map to an intermediate object to calculate distance only once per item
+                const matchesWithDist = potentialMatches.map(color => {
+                    const distName = getEditDistance(lowerQuery, color.name.toLowerCase());
+                    // Only consider hex distance if query looks like it could be part of a hex
+                    // (simple heuristic: has digits or a-f, but just doing both is safer for UX)
+                    const distHex = getEditDistance(lowerQuery, color.hex.toLowerCase());
+                    return {
+                        color: color,
+                        dist: Math.min(distName, distHex)
+                    };
+                });
+
+                matchesWithDist.sort((a, b) => a.dist - b.dist);
+
+                // 4. Apply limits
+                const limit = isFuzzy ? 20 : 100;
+                currentMatches = matchesWithDist.slice(0, limit).map(item => item.color);
 
                 if (currentMatches.length > 0) {
                     searchResults.innerHTML = currentMatches.map((color, index) => `
@@ -1603,6 +1610,7 @@
             
             const delta = event.deltaY * 0.001;
             cameraDistance = Math.max(0.1, Math.min(10, cameraDistance + delta));
+            moveAcceleration = cameraDistance * 0.1;
         }
 
         function onWindowResize() {

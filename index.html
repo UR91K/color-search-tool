@@ -1212,6 +1212,37 @@
                 };
             }
 
+            // Levenshtein distance for sorting
+            function getEditDistance(a, b) {
+                if (a.length === 0) return b.length;
+                if (b.length === 0) return a.length;
+
+                const matrix = [];
+
+                for (let i = 0; i <= b.length; i++) {
+                    matrix[i] = [i];
+                }
+
+                for (let j = 0; j <= a.length; j++) {
+                    matrix[0][j] = j;
+                }
+
+                for (let i = 1; i <= b.length; i++) {
+                    for (let j = 1; j <= a.length; j++) {
+                        if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                            matrix[i][j] = matrix[i - 1][j - 1];
+                        } else {
+                            matrix[i][j] = Math.min(
+                                matrix[i - 1][j - 1] + 1,
+                                Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
+                            );
+                        }
+                    }
+                }
+
+                return matrix[b.length][a.length];
+            }
+
             // Update search results
             const updateSearchResults = (query) => {
                 if (query.length < 2) {
@@ -1227,6 +1258,24 @@
                     return color.name.toLowerCase().includes(query) ||
                            color.hex.toLowerCase().includes(query);
                 });
+
+                // Sort by edit distance
+                currentMatches.sort((a, b) => {
+                    const distA = Math.min(
+                        getEditDistance(query, a.name.toLowerCase()),
+                        getEditDistance(query, a.hex.toLowerCase())
+                    );
+                    const distB = Math.min(
+                        getEditDistance(query, b.name.toLowerCase()),
+                        getEditDistance(query, b.hex.toLowerCase())
+                    );
+                    return distA - distB;
+                });
+
+                // Limit to top 100 for performance
+                if (currentMatches.length > 100) {
+                    currentMatches = currentMatches.slice(0, 100);
+                }
 
                 if (currentMatches.length > 0) {
                     searchResults.innerHTML = currentMatches.map((color, index) => `

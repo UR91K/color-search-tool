@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { hexToRgb, indexToColor, colorToIndex, debounce, getEditDistance } from './utils.js';
-import { CameraRig } from 'systems/CameraRig.js';
+import { CameraRig } from './systems/CameraRig.js';
 
 // global vars
 let scene, camera, renderer;

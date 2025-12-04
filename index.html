@@ -472,19 +472,19 @@
                 <span id="scale-value">1.00</span>
             </div>
             <div class="setting-group">
-                <label for="background-red">Background Red</label>
-                <input id="background-red" type="range" min="0" max="255" step="1" value="2" />
-                <span id="background-red-value">2</span>
+                <label for="background-hue">Background Hue</label>
+                <input id="background-hue" type="range" min="0" max="360" step="1" value="0" />
+                <span id="background-hue-value">0</span>
             </div>
             <div class="setting-group">
-                <label for="background-green">Background Green</label>
-                <input id="background-green" type="range" min="0" max="255" step="1" value="2" />
-                <span id="background-green-value">2</span>
+                <label for="background-saturation">Background Saturation</label>
+                <input id="background-saturation" type="range" min="0" max="100" step="1" value="0" />
+                <span id="background-saturation-value">0</span>
             </div>
             <div class="setting-group">
-                <label for="background-blue">Background Blue</label>
-                <input id="background-blue" type="range" min="0" max="255" step="1" value="2" />
-                <span id="background-blue-value">2</span>
+                <label for="background-value">Background Value</label>
+                <input id="background-value" type="range" min="0" max="100" step="1" value="1" />
+                <span id="background-value-value">1</span>
             </div>
             <div class="setting-group" style="margin-top: 12px;">
                 <label for="hide-unflagged-checkbox" style="flex: 1; cursor: pointer;">Hide 'bad' colors</label>
@@ -545,9 +545,9 @@
 
         let hideUnflaggedColors = false;
 
-        let backgroundRed = 2
-        let backgroundGreen = 2
-        let backgroundBlue = 2
+        let backgroundHue = 0;
+        let backgroundSaturation = 0;
+        let backgroundValue = 18;
 
         let axesHelper = null;
 
@@ -923,11 +923,28 @@
 
         function updateSceneBackground() {
             if (scene) {
-                scene.background = new THREE.Color(
-                    backgroundRed / 255,
-                    backgroundGreen / 255,
-                    backgroundBlue / 255
-                );
+                const h = backgroundHue / 360;
+                const s = backgroundSaturation / 100;
+                const v = backgroundValue / 100;
+                
+                // HSV to RGB conversion
+                const i = Math.floor(h * 6);
+                const f = h * 6 - i;
+                const p = v * (1 - s);
+                const q = v * (1 - f * s);
+                const t = v * (1 - (1 - f) * s);
+                
+                let r, g, b;
+                switch (i % 6) {
+                    case 0: r = v; g = t; b = p; break;
+                    case 1: r = q; g = v; b = p; break;
+                    case 2: r = p; g = v; b = t; break;
+                    case 3: r = p; g = q; b = v; break;
+                    case 4: r = t; g = p; b = v; break;
+                    case 5: r = v; g = p; b = q; break;
+                }
+                
+                scene.background = new THREE.Color(r, g, b);
             }
         }
 
@@ -1504,39 +1521,39 @@
             });
 
             // Background color sliders
-            const backgroundRedSlider = document.getElementById('background-red');
-            const backgroundGreenSlider = document.getElementById('background-green');
-            const backgroundBlueSlider = document.getElementById('background-blue');
-            const backgroundRedValue = document.getElementById('background-red-value');
-            const backgroundGreenValue = document.getElementById('background-green-value');
-            const backgroundBlueValue = document.getElementById('background-blue-value');
+            const backgroundHueSlider = document.getElementById('background-hue');
+            const backgroundSaturationSlider = document.getElementById('background-saturation');
+            const backgroundValueSlider = document.getElementById('background-value');
+            const backgroundHueDisplay = document.getElementById('background-hue-value');
+            const backgroundSaturationDisplay = document.getElementById('background-saturation-value');
+            const backgroundValueDisplay = document.getElementById('background-value-value');
 
             // Initialize background values from sliders and display
-            backgroundRed = parseInt(backgroundRedSlider.value);
-            backgroundGreen = parseInt(backgroundGreenSlider.value);
-            backgroundBlue = parseInt(backgroundBlueSlider.value);
-            backgroundRedValue.textContent = backgroundRed;
-            backgroundGreenValue.textContent = backgroundGreen;
-            backgroundBlueValue.textContent = backgroundBlue;
+            backgroundHue = parseInt(backgroundHueSlider.value);
+            backgroundSaturation = parseInt(backgroundSaturationSlider.value);
+            backgroundValue = parseInt(backgroundValueSlider.value);
+            backgroundHueDisplay.textContent = backgroundHue;
+            backgroundSaturationDisplay.textContent = backgroundSaturation;
+            backgroundValueDisplay.textContent = backgroundValue;
 
             // Update scene background
             updateSceneBackground();
 
-            backgroundRedSlider.addEventListener('input', () => {
-                backgroundRed = parseInt(backgroundRedSlider.value);
-                backgroundRedValue.textContent = backgroundRed;
+            backgroundHueSlider.addEventListener('input', () => {
+                backgroundHue = parseInt(backgroundHueSlider.value);
+                backgroundHueDisplay.textContent = backgroundHue;
                 updateSceneBackground();
             });
 
-            backgroundGreenSlider.addEventListener('input', () => {
-                backgroundGreen = parseInt(backgroundGreenSlider.value);
-                backgroundGreenValue.textContent = backgroundGreen;
+            backgroundSaturationSlider.addEventListener('input', () => {
+                backgroundSaturation = parseInt(backgroundSaturationSlider.value);
+                backgroundSaturationDisplay.textContent = backgroundSaturation;
                 updateSceneBackground();
             });
 
-            backgroundBlueSlider.addEventListener('input', () => {
-                backgroundBlue = parseInt(backgroundBlueSlider.value);
-                backgroundBlueValue.textContent = backgroundBlue;
+            backgroundValueSlider.addEventListener('input', () => {
+                backgroundValue = parseInt(backgroundValueSlider.value);
+                backgroundValueDisplay.textContent = backgroundValue;
                 updateSceneBackground();
             });
 

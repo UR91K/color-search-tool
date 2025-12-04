@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 import { hexToRgb, indexToColor, colorToIndex, debounce, getEditDistance } from './utils.js';
 import { CameraRig } from './systems/CameraRig.js';
+import { Picker } from './systems/Picker.js';
+import { Interaction } from './systems/Interaction.js';
 
 // global vars
 let scene, camera, renderer;
 let cameraRig;
+let picker, interaction;
 let colorData = [];
 let instancedMesh = null;
 let selectedColor = null;
@@ -21,12 +24,10 @@ let backgroundValue = 3;
 let axesHelper = null;
 
 // Physics
-const clock = new THREE.Clock(); 
+const clock = new THREE.Clock();
 
 // GPU picking setup
 let pickingMesh = null;
-let pickingRenderTarget = null;
-let pickingMaterial = null;
 
 // current color space
 let currentColorSpace = null;
@@ -79,6 +80,38 @@ function init() {
 
     // Initialize Rig
     cameraRig = new CameraRig(camera, renderer.domElement);
+
+    // 1. Initialize Picker
+    picker = new Picker(renderer, scene, camera);
+
+    // 2. Initialize Interaction
+    interaction = new Interaction(renderer, camera, picker, {
+        
+        // Accessor for the interaction class to find the mesh
+        getPickingMesh: () => pickingMesh, 
+        getVisualMesh: () => instancedMesh,
+
+        // Handle Left Click
+        onSelect: (index) => {
+            const color = colorData[index];
+            if (color) jumpToColor(color, index);
+        },
+
+        // Handle Hover
+        onHover: (index, x, y) => {
+            const tooltip = document.getElementById('tooltip');
+            if (index >= 0) {
+                const color = colorData[index];
+                tooltip.querySelector('.tooltip-name').textContent = color.name;
+                tooltip.querySelector('.tooltip-hex').textContent = color.hex;
+                tooltip.style.display = 'block';
+                tooltip.style.left = (x + 15) + 'px';
+                tooltip.style.top = (y + 15) + 'px';
+            } else {
+                tooltip.style.display = 'none';
+            }
+        }
+    });
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
     scene.add(ambientLight);
@@ -187,8 +220,7 @@ async function createColorSpheres() {
     instancedMesh.frustumCulled = false;  // Disable culling - instances spread far from origin
 
     // Create GPU picking system
-    pickingRenderTarget = new THREE.WebGLRenderTarget(1, 1);
-    pickingMaterial = new THREE.MeshBasicMaterial();
+    const pickingMaterial = new THREE.MeshBasicMaterial();
     pickingMesh = new THREE.InstancedMesh(geometry, pickingMaterial, totalColors);
     pickingMesh.frustumCulled = false;
     pickingMesh.visible = false; // Hidden, only rendered to pick buffer
@@ -384,84 +416,9 @@ function updateSceneBackground() {
     }
 }
 
-// GPU-based picking: render picking mesh to offscreen buffer and read pixel
-function pickColorAtPixel(mouseX, mouseY) {
-    if (!pickingMesh || !pickingRenderTarget) return -1;
 
-    // Resize render target to match viewport
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    if (pickingRenderTarget.width !== width || pickingRenderTarget.height !== height) {
-        pickingRenderTarget.setSize(width, height);
-    }
 
-    // Store original state
-    const originalRenderTarget = renderer.getRenderTarget();
-    const originalAutoClear = renderer.autoClear;
-    const originalBackground = scene.background;
-    
-    // Hide visible mesh, show picking mesh
-    instancedMesh.visible = false;
-    pickingMesh.visible = true;
-    
-    // Temporarily disable scene background for picking (ensures pure black = no hit)
-    scene.background = null;
-    
-    // Render only picking mesh to offscreen buffer
-    renderer.autoClear = true;
-    renderer.setRenderTarget(pickingRenderTarget);
-    renderer.clear();
-    renderer.render(scene, camera);
-    
-    // Restore state
-    pickingMesh.visible = false;
-    instancedMesh.visible = true;
-    scene.background = originalBackground;
-    renderer.setRenderTarget(originalRenderTarget);
-    renderer.autoClear = originalAutoClear;
 
-    // Read pixel at mouse position
-    const pixelBuffer = new Uint8Array(4);
-    const readX = Math.floor(mouseX);
-    const readY = height - Math.floor(mouseY) - 1; // Flip Y coordinate
-    
-    renderer.readRenderTargetPixels(
-        pickingRenderTarget,
-        readX, readY,
-        1, 1,
-        pixelBuffer
-    );
-
-    // Decode color to index
-    const r = pixelBuffer[0];
-    const g = pixelBuffer[1];
-    const b = pixelBuffer[2];
-    
-    // If pixel is pure black (0,0,0), no object was hit
-    if (r === 0 && g === 0 && b === 0) {
-        return -1;
-    }
-    
-    const index = colorToIndex(r, g, b);
-
-    // Validate index
-    if (index >= 0 && index < colorData.length) {
-        return index;
-    }
-    
-    return -1;
-}
-
-function handleColorClick(event) {
-    if (!instancedMesh) return;
-
-    const instanceId = pickColorAtPixel(event.clientX, event.clientY);
-
-    if (instanceId >= 0) {
-        const color = colorData[instanceId];
-        jumpToColor(color, instanceId);
-    }
-}
 
 function jumpToColor(color, instanceId) {
     if (!currentColorSpace) return;
@@ -538,45 +495,11 @@ function animate() {
 
 
 
-// Throttle tooltip updates for performance (GPU picking is fast, but we still throttle to avoid excessive rendering)
-let lastTooltipUpdate = 0;
-const tooltipThrottleMs = 16; // ~60fps updates
 
-function updateTooltip(event) {
-    if (!instancedMesh) return;
-
-    const now = performance.now();
-    if (now - lastTooltipUpdate < tooltipThrottleMs) return;
-    lastTooltipUpdate = now;
-
-    const tooltip = document.getElementById('tooltip');
-    const tooltipName = tooltip.querySelector('.tooltip-name');
-    const tooltipHex = tooltip.querySelector('.tooltip-hex');
-
-    const instanceId = pickColorAtPixel(event.clientX, event.clientY);
-
-    if (instanceId >= 0) {
-        const color = colorData[instanceId];
-
-        tooltipName.textContent = color.name;
-        tooltipHex.textContent = color.hex;
-
-        tooltip.style.display = 'block';
-        tooltip.style.left = (event.clientX + 15) + 'px';
-        tooltip.style.top = (event.clientY + 15) + 'px';
-    } else {
-        tooltip.style.display = 'none';
-    }
-}
 
 function setupEventListeners() {
     // Mouse controls
-    renderer.domElement.addEventListener('mousedown', onMouseDown);
-    renderer.domElement.addEventListener('mousemove', onMouseMove);
     renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-
-    // Window resize
-    window.addEventListener('resize', onWindowResize);
 
     // Search
     const searchInput = document.getElementById('search-input');
@@ -913,24 +836,7 @@ function setupEventListeners() {
 
 // events
 
-function onMouseDown(event) {
-    if (event.button === 0) { // Left click
-        handleColorClick(event);
-    }
-}
 
-function onMouseMove(event) {
-    // Handle tooltip on hover
-    updateTooltip(event);
-}
-
-
-
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
 
 init();
 loadColors();

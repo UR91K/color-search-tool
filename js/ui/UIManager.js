@@ -1,15 +1,17 @@
 import { debounce, getEditDistance } from '../utils.js';
 
 export class UIManager {
+    /**
+     * manages UI interactions including search, settings, tooltips, and controls
+     * @param {Object} callbacks - Event callback functions: { onSearch, onSelect, onSpaceChange, onScaleChange, onBackgroundChange, onToggleAxes, onToggleVisibility }
+     */
     constructor(callbacks) {
-        // Callbacks: { onSearch, onSelect, onSpaceChange, onScaleChange, onBackgroundChange, onToggleAxes, onToggleVisibility }
         this.callbacks = callbacks || {};
-        
-        this.data = []; // Local reference to data for search functionality
+
+        this.data = [];
         this.currentMatches = [];
         this.searchIndex = -1;
 
-        // Cache DOM Elements
         this.dom = {
             loading: document.getElementById('loading'),
             loadingBar: document.getElementById('loading-bar'),
@@ -36,20 +38,37 @@ export class UIManager {
         this._setupEventListeners();
     }
 
-    // Called by Main after data is loaded so Search can work
+    /**
+     * Sets the color data reference for search functionality.
+     * Called by Main after data is loaded.
+     * @param {Array} data - Array of color objects
+     */
     setData(data) {
         this.data = data;
     }
 
+    /**
+     * Updates the loading progress bar and status text.
+     * Hides loading UI when complete.
+     * @param {number} percent - Loading progress percentage (0-100)
+     * @param {string} status - Status message to display
+     */
     updateLoading(percent, status) {
         if (this.dom.loadingBar) this.dom.loadingBar.style.width = percent + '%';
         if (this.dom.loadingStatus) this.dom.loadingStatus.textContent = status;
-        
+
         if (percent >= 100 && this.dom.loading) {
             setTimeout(() => this.dom.loading.style.display = 'none', 500);
         }
     }
 
+    /**
+     * Shows a tooltip with color information at the specified screen coordinates.
+     * @param {number} x - Screen X coordinate
+     * @param {number} y - Screen Y coordinate
+     * @param {string} name - Color name
+     * @param {string} hex - Color hex code
+     */
     showTooltip(x, y, name, hex) {
         if (!this.dom.tooltip) return;
         this.dom.tooltip.querySelector('.tooltip-name').textContent = name;
@@ -59,12 +78,16 @@ export class UIManager {
         this.dom.tooltip.style.top = (y + 15) + 'px';
     }
 
+    /**
+     * Hides the tooltip.
+     */
     hideTooltip() {
         if (this.dom.tooltip) this.dom.tooltip.style.display = 'none';
     }
 
-    // --- Internal Setup ---
-
+    /**
+     * Sets up all UI event listeners for search, settings, controls, and color space selection.
+     */
     _setupEventListeners() {
         this._setupSearch();
         this._setupSettings();
@@ -72,17 +95,16 @@ export class UIManager {
         this._setupColorSpaceSelect();
     }
 
+    /**
+     * Sets up search input event listeners for debounced search and keyboard navigation.
+     */
     _setupSearch() {
         if (!this.dom.searchInput) return;
 
-        // Debounced Input
         const performSearch = debounce((query) => this._handleSearch(query), 150);
         this.dom.searchInput.addEventListener('input', (e) => performSearch(e.target.value));
-
-        // Keyboard Navigation
         this.dom.searchInput.addEventListener('keydown', (e) => this._handleSearchKeydown(e));
-        
-        // Hide on blur
+
         this.dom.searchInput.addEventListener('blur', () => {
             setTimeout(() => {
                 if(this.dom.searchResults) this.dom.searchResults.style.display = 'none';
@@ -90,6 +112,11 @@ export class UIManager {
         });
     }
 
+    /**
+     * Performs search filtering and ranking based on user input.
+     * Uses strict matching first, then fuzzy matching with edit distance ranking.
+     * @param {string} rawQuery - Raw search query from input
+     */
     _handleSearch(rawQuery) {
         const query = rawQuery.trim().toLowerCase();
         if (query.length < 2) {
@@ -99,22 +126,18 @@ export class UIManager {
             return;
         }
 
-        // 1. Strict Filter
-        // We check if the 'hide' checkbox is checked to filter search results too
         const hideUnflagged = this.dom.hideCheck ? this.dom.hideCheck.checked : false;
 
         let potentialMatches = this.data.filter(color => {
             if (hideUnflagged && !color.flag) return false;
-            return color.name.toLowerCase().includes(query) || 
+            return color.name.toLowerCase().includes(query) ||
                    color.hex.toLowerCase().includes(query);
         });
 
-        // 2. Fuzzy Fallback
         if (potentialMatches.length === 0) {
             potentialMatches = this.data.filter(c => !hideUnflagged || c.flag);
         }
 
-        // 3. Sort by Distance
         const matchesWithDist = potentialMatches.map(color => {
             const distName = getEditDistance(query, color.name.toLowerCase());
             const distHex = getEditDistance(query, color.hex.toLowerCase());
@@ -123,23 +146,22 @@ export class UIManager {
 
         matchesWithDist.sort((a, b) => a.dist - b.dist);
 
-        // 4. Render
         const limit = potentialMatches.length === 0 ? 20 : 100;
         this.currentMatches = matchesWithDist.slice(0, limit).map(item => item.color);
         this._renderSearchResults();
 
-        // 5. Auto-select top result (Visual only)
         if (this.currentMatches.length > 0) {
             this.searchIndex = 0;
-            // Optionally: Auto-jump to first result? 
-            // The original code did: jumpToColor(topResult) immediately.
             if (this.callbacks.onSelect) {
                 const index = this.data.indexOf(this.currentMatches[0]);
-                this.callbacks.onSelect(index, true); // true = 'fromSearch' (optional flag)
+                this.callbacks.onSelect(index, true);
             }
         }
     }
 
+    /**
+     * Renders the search results list with color swatches and click handlers.
+     */
     _renderSearchResults() {
         if (this.currentMatches.length > 0) {
             this.dom.searchResults.innerHTML = this.currentMatches.map((color, idx) => `
@@ -153,7 +175,6 @@ export class UIManager {
             `).join('');
             this.dom.searchResults.style.display = 'block';
 
-            // Add click listeners to new DOM elements
             this.dom.searchResults.querySelectorAll('.search-result-item').forEach(item => {
                 item.addEventListener('click', () => {
                     const idx = parseInt(item.getAttribute('data-index'));
@@ -165,6 +186,10 @@ export class UIManager {
         }
     }
 
+    /**
+     * Handles keyboard navigation for search results.
+     * @param {KeyboardEvent} e - Keyboard event
+     */
     _handleSearchKeydown(e) {
         if (this.currentMatches.length === 0) return;
 
@@ -184,14 +209,16 @@ export class UIManager {
         }
     }
 
+    /**
+     * Updates the visual selection in search results and triggers live preview.
+     */
     _updateSearchSelection() {
         const items = this.dom.searchResults.querySelectorAll('.search-result-item');
         items.forEach((item, idx) => {
             if (idx === this.searchIndex) {
                 item.classList.add('selected');
                 item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                
-                // Live preview as we arrow down
+
                 if (this.callbacks.onSelect) {
                     const color = this.currentMatches[idx];
                     const globalIndex = this.data.indexOf(color);
@@ -203,23 +230,28 @@ export class UIManager {
         });
     }
 
+    /**
+     * Selects a search result and clears the search UI.
+     * @param {number} matchIndex - Index in the current matches array
+     */
     _selectSearchResult(matchIndex) {
         if (matchIndex >= 0 && matchIndex < this.currentMatches.length) {
             const color = this.currentMatches[matchIndex];
             const globalIndex = this.data.indexOf(color);
-            
+
             if (this.callbacks.onSelect) {
                 this.callbacks.onSelect(globalIndex);
             }
-            
-            // Clear UI
+
             this.dom.searchInput.value = '';
             this.dom.searchResults.style.display = 'none';
         }
     }
 
+    /**
+     * Sets up settings menu toggle, click-outside close, and escape key handling.
+     */
     _setupSettings() {
-        // Toggle Menu
         if (this.dom.settingsToggle) {
             this.dom.settingsToggle.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -227,14 +259,12 @@ export class UIManager {
             });
         }
 
-        // Close on Click Outside
         document.addEventListener('mousedown', (e) => {
             if (this.dom.settingsMenu && !this.dom.settingsMenu.contains(e.target)) {
                 this.dom.settingsMenu.classList.remove('open');
             }
         });
-        
-        // Close on Esc
+
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.dom.settingsMenu) {
                 this.dom.settingsMenu.classList.remove('open');
@@ -242,8 +272,10 @@ export class UIManager {
         });
     }
 
+    /**
+     * Sets up control event listeners for scale slider, background sliders, and checkboxes.
+     */
     _setupControls() {
-        // Scale
         if (this.dom.scaleSlider) {
             this.dom.scaleSlider.addEventListener('input', () => {
                 const val = parseFloat(this.dom.scaleSlider.value);
@@ -252,12 +284,11 @@ export class UIManager {
             });
         }
 
-        // Background Sliders
         const updateBg = () => {
             const h = parseInt(this.dom.bgHue.value);
             const s = parseInt(this.dom.bgSat.value);
             const v = parseInt(this.dom.bgVal.value);
-            
+
             this.dom.bgHueVal.textContent = h;
             this.dom.bgSatVal.textContent = s;
             this.dom.bgValVal.textContent = v;
@@ -271,7 +302,6 @@ export class UIManager {
         if (this.dom.bgSat) this.dom.bgSat.addEventListener('input', updateBg);
         if (this.dom.bgVal) this.dom.bgVal.addEventListener('input', updateBg);
 
-        // Checkboxes
         if (this.dom.hideCheck) {
             this.dom.hideCheck.addEventListener('change', (e) => {
                 if (this.callbacks.onToggleVisibility) {
@@ -289,6 +319,9 @@ export class UIManager {
         }
     }
 
+    /**
+     * Sets up the custom color space dropdown with click handlers and outside click closing.
+     */
     _setupColorSpaceSelect() {
         if (!this.dom.customSelect) return;
 
@@ -306,13 +339,11 @@ export class UIManager {
                 const value = option.getAttribute('data-value');
                 const text = option.textContent;
 
-                // UI Update
                 this.dom.customSelect.querySelectorAll('.custom-option').forEach(o => o.classList.remove('selected'));
                 option.classList.add('selected');
                 this.dom.selectedSpaceName.textContent = text;
                 this.dom.customSelect.classList.remove('open');
 
-                // Callback
                 if (this.callbacks.onSpaceChange) {
                     this.callbacks.onSpaceChange(value);
                 }

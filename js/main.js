@@ -8,25 +8,20 @@ import { PointCloud } from './components/PointCloud.js';
 import { UIManager } from './ui/UIManager.js';
 import { ColorLoader } from './data/ColorLoader.js';
 
-// Globals
 let graphics, cameraRig, pointCloud, picker, interaction, ui;
-let currentColorSpaceName = 'oklab'; // Track state
+let currentColorSpaceName = 'oklab';
 let currentScale = 1.0;
 
 const clock = new THREE.Clock();
 
 function init() {
-    // 1. Setup Graphics
     graphics = new Renderer('canvas-container');
 
-    // 2. Setup Systems
     cameraRig = new CameraRig(graphics.camera, graphics.renderer.domElement);
     pointCloud = new PointCloud(graphics.scene);
     picker = new Picker(graphics.renderer, graphics.scene, graphics.camera);
 
-    // 3. Setup UI (The Brain)
     ui = new UIManager({
-        // Search/Select Callback
         onSelect: (index) => {
             const color = pointCloud.data[index];
             if (color) {
@@ -37,14 +32,12 @@ function init() {
             }
         },
 
-        // Color Space Switcher
         onSpaceChange: async (spaceName) => {
             if (colorSpaces[spaceName]) {
                 currentColorSpaceName = spaceName;
                 const space = colorSpaces[spaceName];
                 
-                // IMPORTANT: Apply the current scale slider value to the space definition
-                space.scale = currentScale; // Assuming 4.0 is base scale
+                space.scale = currentScale;
 
                 ui.updateLoading(0, `Switching to ${space.name}...`);
                 document.getElementById('loading').style.display = 'block';
@@ -55,26 +48,21 @@ function init() {
             }
         },
 
-        // Scale Slider
         onScaleChange: async (newVal) => {
             currentScale = newVal;
             const space = colorSpaces[currentColorSpaceName];
             if (space) {
-                // Update the scaling factor in the space definition
                 space.scale = currentScale; 
                 
-                // We don't show loading bar for slider drag usually,  
-                // but updatePositions is async.
+                // updatePositions is async because it needs to talk to a loading bar when changing colour space
                 await pointCloud.updatePositions(space);
             }
         },
 
-        // Background Sliders
         onBackgroundChange: (h, s, v) => {
             graphics.setBackground(h, s, v);
         },
 
-        // Checkboxes
         onToggleVisibility: (hide) => {
             pointCloud.updateVisibility(hide);
         },
@@ -83,13 +71,11 @@ function init() {
         }
     });
 
-    // 4. Setup Interaction (Mouse Hover/Click)
     interaction = new Interaction(graphics.renderer, graphics.camera, picker, {
         getPickingMesh: () => pointCloud.pickingMesh,
         getVisualMesh: () => pointCloud.mesh,
         
         onSelect: (index) => {
-            // Re-use UI logic
             const color = pointCloud.data[index];
             if (color) {
                 pointCloud.selectIndex(index);
@@ -108,7 +94,6 @@ function init() {
         }
     });
 
-    // 5. Start Loading
     loadData();
     animate();
 }
@@ -124,11 +109,9 @@ async function loadData() {
     try {
         const data = await ColorLoader.load('../data/colors_oklab.csv', (p, s) => ui.updateLoading(p, s));
         
-        // Give data to systems
         ui.setData(data);
         pointCloud.init(data);
 
-        // Initial Layout
         const startSpace = colorSpaces[currentColorSpaceName];
         startSpace.scale = currentScale; 
         
@@ -137,7 +120,6 @@ async function loadData() {
         ui.updateLoading(100, 'Done!');
     } catch (e) {
         console.error(e);
-        // UI error handling logic
     }
 }
 

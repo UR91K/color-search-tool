@@ -1,28 +1,29 @@
 import * as THREE from 'three';
 
 export class Renderer {
+    /**
+     * initializes the Three.js scene, camera, renderer, lights, and DOM integration
+     * 
+     * handles automatic resize events and sets up default dark background
+     * @param {string} containerId - DOM element ID to append the canvas to
+     */
     constructor(containerId) {
-        // 1. Setup Scene
         this.scene = new THREE.Scene();
-        
-        // 2. Setup Camera
-        // We set a default position, but CameraRig will immediately override it
+
         this.camera = new THREE.PerspectiveCamera(
-            75, 
-            window.innerWidth / window.innerHeight, 
-            0.01, 
+            75,
+            window.innerWidth / window.innerHeight,
+            0.01,
             1000
         );
 
-        // 3. Setup WebGL Renderer
-        this.renderer = new THREE.WebGLRenderer({ 
-            antialias: true, 
-            logarithmicDepthBuffer: true 
+        this.renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            logarithmicDepthBuffer: true
         });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
-        
-        // Append to DOM
+
         const container = document.getElementById(containerId);
         if (container) {
             container.appendChild(this.renderer.domElement);
@@ -30,7 +31,6 @@ export class Renderer {
             console.error(`Container ID "${containerId}" not found.`);
         }
 
-        // 4. Setup Lights
         this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         this.scene.add(this.ambientLight);
 
@@ -38,41 +38,50 @@ export class Renderer {
         this.pointLight.position.set(10, 10, 10);
         this.scene.add(this.pointLight);
 
-        // 5. Helpers
         this.axesHelper = new THREE.AxesHelper(1);
-        this.axesHelper.visible = false; // Hidden by default
+        this.axesHelper.visible = false;
         this.scene.add(this.axesHelper);
 
-        // 6. Initial Background
-        this.setBackground(0, 0, 3); // Default dark background
-        
-        // Handle Resize automatically (Self-contained)
-        // Note: If Interaction.js also handles resize, you can remove this listener 
-        // to avoid double-firing, but it's safest for the Renderer to own its size.
+        this.setBackground(0, 0, 3);
+
         window.addEventListener('resize', () => this.onResize());
     }
 
+    /**
+     * updates camera aspect ratio and renderer size when window resizes
+     */
     onResize() {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
+    /**
+     * renders the current scene with the camera
+     */
     render() {
         this.renderer.render(this.scene, this.camera);
     }
 
+    /**
+     * shows or hides the coordinate axes helper
+     * @param {boolean} visible - whether to show the axes
+     */
     setAxesVisibility(visible) {
         this.axesHelper.visible = visible;
     }
 
-    // Handles the HSV -> RGB conversion for the background
+    /**
+     * sets the scene background color using HSV values
+     * @param {number} h - hue (0-360)
+     * @param {number} s - saturation (0-100)
+     * @param {number} v - value (0-100)
+     */
     setBackground(h, s, v) {
         const hue = h / 360;
         const saturation = s / 100;
         const value = v / 100;
-        
-        // HSV to RGB conversion
+
         const i = Math.floor(hue * 6);
         const f = hue * 6 - i;
         const p = value * (1 - saturation);

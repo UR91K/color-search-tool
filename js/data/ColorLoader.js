@@ -2,14 +2,14 @@ import { hexToRgb } from '../utils.js';
 
 export class ColorLoader {
     /**
-     * Fetches and parses the CSV data.
-     * @param {string} url - Path to the CSV file
-     * @param {function} onProgress - Callback (percent, statusMessage)
-     * @returns {Promise<Array>} - Array of color objects
+     * fetches and parses the CSV data.
+     * @param {string} url - path to the CSV file
+     * @param {function} onProgress - callback (percent, statusMessage)
+     * @returns {Promise<Array>} - array of colour objects
      */
     static async load(url, onProgress) {
         try {
-            // 1. Fetch
+            // fetch
             if (onProgress) onProgress(10, 'Fetching CSV file...');
             const response = await fetch(url);
 
@@ -17,27 +17,27 @@ export class ColorLoader {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            // 2. Read Text
+            // read text
             if (onProgress) onProgress(30, 'Reading file data...');
             const text = await response.text();
 
-            // 3. Parse Lines
+            // parse lines
             if (onProgress) onProgress(40, 'Parsing colors...');
             const lines = text.split('\n');
             const totalLines = lines.length;
             const data = [];
 
-            // Skip header (i=1)
+            // skip header (i=1)
             for (let i = 1; i < totalLines; i++) {
                 const line = lines[i].trim();
                 if (!line) continue;
 
                 const parts = line.split(',');
                 
-                // Ensure row has enough columns based on your specific CSV structure
+                // ensure row has enough columns based on your specific CSV structure
                 if (parts.length >= 5) {
                     const hex = parts[1];
-                    const rgb = hexToRgb(hex); // Util helper
+                    const rgb = hexToRgb(hex);
                     
                     data.push({
                         name: parts[0],
@@ -45,22 +45,23 @@ export class ColorLoader {
                         l: parseFloat(parts[2]),
                         a: parseFloat(parts[3]),
                         oklab_b: parseFloat(parts[4]),
-                        // Adding RGB to the data object avoids recalculating it later
+                        // adding RGB to the data object avoids recalculating it later
                         r: rgb.r,
                         g: rgb.g,
                         b: rgb.b,
-                        flag: JSON.parse(parts[5] || 'false'), // Safe fallback
+                        flag: JSON.parse(parts[5] || 'false'),
                     });
                 }
 
-                // 4. Non-blocking yield
-                // Every 2000 lines, pause execution to let the UI breathe
+                // non blocking yield
+                // every 2000 lines, update the loading bar
                 if (i % 2000 === 0) {
                     const progress = 40 + (i / totalLines) * 30;
                     if (onProgress) {
                         onProgress(progress, `Parsing colors... ${i}/${totalLines}`);
                     }
-                    // This allows the browser to render the loading bar update
+
+                    // let the browser render the loading bar update
                     await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
@@ -68,7 +69,7 @@ export class ColorLoader {
             return data;
 
         } catch (error) {
-            // Re-throw so main.js can handle the UI error display
+            // re-throw to let main.js handle the UI error display
             throw error;
         }
     }

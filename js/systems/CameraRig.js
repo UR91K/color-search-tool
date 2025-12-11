@@ -5,26 +5,19 @@ export class CameraRig {
         this.camera = camera;
         this.domElement = domElement;
 
-        // State: Positioning
         this.orbitPoint = new THREE.Vector3(0, 0, 0);
         this.distance = 2.5;
         this.angles = { theta: 0, phi: Math.PI / 4 };
 
-        // State: Animation Targets
         this.targetOrbitPoint = new THREE.Vector3(0, 0, 0);
         this.targetDistance = 2.5;
         this.isAnimatingOrbit = false;
         this.isAnimatingDistance = false;
 
-        // State: Physics
         this.velocity = new THREE.Vector3(0, 0, 0);
         this.friction = 4.0;
-        
-        // This replaces the hardcoded 'moveAcceleration'. 
-        // We will multiply this by distance dynamically.
-        this.baseMoveSpeed = 0.5; 
+        this.baseMoveSpeed = 0.5;
 
-        // State: Input
         this.keys = {};
         this.isDragging = false;
         this.prevMouse = { x: 0, y: 0 };
@@ -32,38 +25,42 @@ export class CameraRig {
         this._setupEventListeners();
     }
 
-    // Call this from your main animate loop
+    /**
+     * updates the camera rig physics, animations, and transform
+     * called from the main animation loop each frame
+     * @param {number} deltaTime - time elapsed since last update in seconds
+     */
     update(deltaTime) {
-        // 1. Calculate dynamic acceleration based on zoom level
-        // If we are far away (distance 10), we move fast. Close up (distance 0.1), we move slow.
-        const currentAccel = Math.max(0.5, this.distance * 2.0); 
+        const currentAccel = Math.max(0.5, this.distance * 2.0);
 
-        // 2. Handle Physics (WASD Movement)
         this._updatePhysics(deltaTime, currentAccel);
-
-        // 3. Handle Smooth Transitions (FlyTo)
         this._updateAnimations();
-
-        // 4. Update Three.js Camera Transform
         this._updateCameraTransform();
     }
 
-    // Public API to jump to a specific spot (used by Search/Click)
+    /**
+     * animates the camera to fly to a target position
+     * 
+     * used when scrolling search results or clicking on a color
+     * @param {THREE.Vector3} targetPosition - the position to fly the camera to
+     */
     flyTo(targetPosition) {
         this.targetOrbitPoint.copy(targetPosition);
-        this.targetDistance = 0.2; // Zoom in close
-        
-        // Stop any existing physics momentum so we don't fight the animation
+        this.targetDistance = 0.1;
         this.velocity.set(0, 0, 0);
 
         this.isAnimatingOrbit = true;
         this.isAnimatingDistance = true;
     }
 
+    /**
+     * updates physics simulation for camera movement including WASD controls and momentum
+     * @param {number} deltaTime - time elapsed since last update
+     * @param {number} acceleration - current acceleration based on zoom level
+     */
     _updatePhysics(deltaTime, acceleration) {
         const moveDir = new THREE.Vector3(0, 0, 0);
 
-        // get camera forward/right vectors
         const front = new THREE.Vector3();
         this.camera.getWorldDirection(front);
         front.normalize();
@@ -71,23 +68,17 @@ export class CameraRig {
         const right = new THREE.Vector3();
         right.crossVectors(front, new THREE.Vector3(0, 1, 0)).normalize();
 
-        // keyboard inputs
         if (this.keys['w'] || this.keys['W']) moveDir.add(front);
         if (this.keys['s'] || this.keys['S']) moveDir.sub(front);
         if (this.keys['a'] || this.keys['A']) moveDir.sub(right);
         if (this.keys['d'] || this.keys['D']) moveDir.add(right);
 
-        // apply acceleration
         if (moveDir.lengthSq() > 0) {
-            // If interacting while animating, convert the animation's current "step" 
-            // into momentum so it drifts naturally instead of stopping abruptly.
             if (this.isAnimatingOrbit) {
-                // Calculate the displacement we HAD in recent frames (reverse direction)
                 const displacement = new THREE.Vector3()
-                    .subVectors(this.orbitPoint, this.targetOrbitPoint)  // FROM target TO current (reversed!)
+                    .subVectors(this.orbitPoint, this.targetOrbitPoint)
                     .multiplyScalar(0.1);
 
-                // Convert displacement to velocity
                 if (deltaTime > 0.001) {
                     const animVel = displacement.divideScalar(deltaTime);
                     animVel.multiplyScalar(0.5);
@@ -102,7 +93,6 @@ export class CameraRig {
             this.velocity.add(moveDir);
         }
 
-        // apply friction
         const speed = this.velocity.length();
         if (speed > 0) {
             const drop = speed * this.friction * deltaTime;
@@ -112,14 +102,15 @@ export class CameraRig {
             }
         }
 
-        // apply velocity
         if (this.velocity.lengthSq() > 0) {
             this.orbitPoint.add(this.velocity.clone().multiplyScalar(deltaTime));
         }
     }
 
+    /**
+     * updates smooth interpolation animations for orbit point and distance
+     */
     _updateAnimations() {
-        // smoothly interpolate orbit point
         if (this.isAnimatingOrbit) {
             this.orbitPoint.lerp(this.targetOrbitPoint, 0.1);
             if (this.orbitPoint.distanceTo(this.targetOrbitPoint) < 0.001) {
@@ -127,7 +118,6 @@ export class CameraRig {
             }
         }
 
-        // smoothly interpolate distance
         if (this.isAnimatingDistance) {
             this.distance += (this.targetDistance - this.distance) * 0.1;
             if (Math.abs(this.targetDistance - this.distance) < 0.001) {
@@ -136,6 +126,9 @@ export class CameraRig {
         }
     }
 
+    /**
+     * updates the camera's position and orientation based on spherical coordinates
+     */
     _updateCameraTransform() {
         const x = this.orbitPoint.x + this.distance * Math.sin(this.angles.phi) * Math.cos(this.angles.theta);
         const y = this.orbitPoint.y + this.distance * Math.cos(this.angles.phi);
@@ -145,10 +138,12 @@ export class CameraRig {
         this.camera.lookAt(this.orbitPoint);
     }
 
+    /**
+     * sets up mouse, wheel, and keyboard event listeners for camera control
+     */
     _setupEventListeners() {
-        // Mouse Drag (Orbit)
         this.domElement.addEventListener('mousedown', (e) => {
-            if (e.button === 2) { // Right Click
+            if (e.button === 2) {
                 this.isDragging = true;
                 this.prevMouse = { x: e.clientX, y: e.clientY };
             }
@@ -165,30 +160,23 @@ export class CameraRig {
 
                 this.angles.theta += deltaX * 0.005;
                 this.angles.phi += deltaY * 0.005;
-
-                // Clamp Phi to avoid flipping over
                 this.angles.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.angles.phi));
 
                 this.prevMouse = { x: e.clientX, y: e.clientY };
             }
         });
 
-        // Zoom
         this.domElement.addEventListener('wheel', (e) => {
             e.preventDefault();
-            
-            // If user manually zooms, cancel any auto-zoom animations
+
             if (this.isAnimatingDistance) {
                 this.isAnimatingDistance = false;
             }
 
             const delta = e.deltaY * 0.001;
             this.distance = Math.max(0.1, Math.min(20, this.distance + delta));
-            // Note: We don't need to set acceleration here anymore. 
-            // The update() loop handles it automatically based on this.distance.
         }, { passive: false });
 
-        // Keys
         window.addEventListener('keydown', (e) => this.keys[e.key] = true);
         window.addEventListener('keyup', (e) => this.keys[e.key] = false);
     }

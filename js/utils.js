@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 
-// helper function to convert hex to RGB
+/**
+ * converts a hex color string to RGB object 
+ * @param {string} hex - hex color string (with or without #)
+ * @returns {Object} RGB object with r, g, b properties (0-255)
+ */
 export function hexToRgb(hex) {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     return result ? {
@@ -10,23 +14,38 @@ export function hexToRgb(hex) {
     } : { r: 0, g: 0, b: 0 };
 }
 
-// Encode instance index as RGB color (offset by 1 so black=0 means "no hit")
-// Index 0 becomes color (1,0,0), index 1 becomes (1,0,1), etc.
+/**
+ * encodes an instance index as an RGB color for GPU picking
+ * uses offset of 1 so black (0,0,0) represents "no hit"
+ * @param {number} index - Instance index to encode
+ * @returns {THREE.Color} RGB color representing the index
+ */
 export function indexToColor(index) {
-    const encoded = index + 1; // Offset by 1 so 0 is never used
+    const encoded = index + 1;
     const r = ((encoded >> 16) & 0xff) / 255;
     const g = ((encoded >> 8) & 0xff) / 255;
     const b = (encoded & 0xff) / 255;
     return new THREE.Color(r, g, b);
 }
 
-// Decode RGB color back to instance index
+/**
+ * decodes an RGB color back to the original instance index
+ * @param {number} r - Red component (0-255)
+ * @param {number} g - Green component (0-255)
+ * @param {number} b - Blue component (0-255)
+ * @returns {number} Decoded instance index
+ */
 export function colorToIndex(r, g, b) {
     const encoded = (r << 16) | (g << 8) | b;
-    return encoded - 1; // Remove offset
+    return encoded - 1;
 }
 
-// Debounce function
+/**
+ * creates a debounced version of a function that delays execution until after wait milliseconds
+ * @param {Function} func - Function to debounce
+ * @param {number} wait - Milliseconds to wait before executing
+ * @returns {Function} Debounced function
+ */
 export function debounce(func, wait) {
     let timeout;
     return function executedFunction(...args) {
@@ -39,7 +58,13 @@ export function debounce(func, wait) {
     };
 }
 
-// Levenshtein distance for sorting (optimized O(min(m,n)) space)
+/**
+ * calculates Levenshtein distance between two strings for fuzzy search ranking
+ * uses optimized algorithm with O(min(m,n)) space complexity
+ * @param {string} a - First string
+ * @param {string} b - Second string
+ * @returns {number} Edit distance between the strings
+ */
 export function getEditDistance(a, b) {
     if (a.length === 0) return b.length;
     if (b.length === 0) return a.length;

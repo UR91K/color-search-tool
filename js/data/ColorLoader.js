@@ -1,4 +1,4 @@
-import { hexToRgb } from '../utils.js';
+import { hexToRgb, rgbToCielab } from '../utils.js';
 
 export class ColorLoader {
     /**
@@ -38,6 +38,7 @@ export class ColorLoader {
                 if (parts.length >= 5) {
                     const hex = parts[1];
                     const rgb = hexToRgb(hex);
+                    const lab = rgbToCielab(rgb.r, rgb.g, rgb.b);
                     
                     data.push({
                         name: parts[0],
@@ -49,6 +50,10 @@ export class ColorLoader {
                         r: rgb.r,
                         g: rgb.g,
                         b: rgb.b,
+                        // CIELAB (1976) derived from sRGB
+                        cielab_l: lab.l,
+                        cielab_a: lab.a,
+                        cielab_b: lab.b,
                         flag: JSON.parse(parts[5] || 'false'),
                     });
                 }

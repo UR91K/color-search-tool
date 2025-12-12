@@ -90,3 +90,52 @@ export function getEditDistance(a, b) {
     }
     return row[a.length];
 }
+
+/**
+ * converts sRGB (0-255) to CIELAB (1976) using D65/2° reference white.
+ * output ranges are approximately: L* [0..100], a* [-128..127], b* [-128..127]
+ * @param {number} r - red (0-255)
+ * @param {number} g - green (0-255)
+ * @param {number} b - blue (0-255)
+ * @returns {{l:number,a:number,b:number}} CIELAB values
+ */
+export function rgbToCielab(r, g, b) {
+    // sRGB to linear RGB
+    const srgbToLinear = (u8) => {
+        const v = Math.min(255, Math.max(0, u8)) / 255;
+        return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    };
+
+    const R = srgbToLinear(r);
+    const G = srgbToLinear(g);
+    const B = srgbToLinear(b);
+
+    // linear RGB to XYZ (D65)
+    // matrix from IEC 61966-2-1:1999 (sRGB) with D65 white point
+    const X = R * 0.4124564 + G * 0.3575761 + B * 0.1804375;
+    const Y = R * 0.2126729 + G * 0.7151522 + B * 0.0721750;
+    const Z = R * 0.0193339 + G * 0.1191920 + B * 0.9503041;
+
+    // normalize by reference white (D65)
+    const Xn = 0.95047;
+    const Yn = 1.00000;
+    const Zn = 1.08883;
+
+    const fx = _labF(X / Xn);
+    const fy = _labF(Y / Yn);
+    const fz = _labF(Z / Zn);
+
+    const L = 116 * fy - 16;
+    const A = 500 * (fx - fy);
+    const B2 = 200 * (fy - fz);
+
+    return { l: L, a: A, b: B2 };
+}
+
+function _labF(t) {
+    // CIE Lab f(t) with delta = 6/29
+    const d = 6 / 29;
+    const d3 = d * d * d;
+    if (t > d3) return Math.cbrt(t);
+    return (t / (3 * d * d)) + (4 / 29);
+}

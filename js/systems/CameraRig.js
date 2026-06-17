@@ -160,7 +160,7 @@ export class CameraRig {
                 const deltaY = e.clientY - this.prevMouse.y;
 
                 this.angles.theta += deltaX * 0.005;
-                this.angles.phi += deltaY * 0.005 * (this.invertPitch ? 1 : -1);
+                this.angles.phi += deltaY * 0.005 * (this.invertPitch ? -1 : 1);
                 this.angles.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.angles.phi));
 
                 this.prevMouse = { x: e.clientX, y: e.clientY };

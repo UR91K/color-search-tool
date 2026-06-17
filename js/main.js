@@ -68,6 +68,9 @@ function init() {
         },
         onToggleAxes: (show) => {
             graphics.setAxesVisibility(show);
+        },
+        onInvertPitchChange: (invert) => {
+            cameraRig.invertPitch = invert;
         }
     });
 
@@ -83,7 +86,22 @@ function init() {
                 cameraRig.flyTo(pos);
             }
         },
-        
+
+        onTap: (index) => {
+            const color = pointCloud.data[index];
+            if (color) {
+                pointCloud.selectIndex(index);
+                ui.showTouchPopup(color.name, color.hex, () => {
+                    const pos = pointCloud.getBounds(index);
+                    if (pos) cameraRig.flyTo(pos);
+                });
+            }
+        },
+
+        onTapMiss: () => {
+            ui.hideTouchPopup();
+        },
+
         onHover: (index, x, y) => {
             if (index >= 0) {
                 const color = pointCloud.data[index];

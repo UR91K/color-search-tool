@@ -70,15 +70,36 @@
                 <label for="show-axes-checkbox" style="flex: 1; cursor: pointer;">Show axes</label>
                 <input id="show-axes-checkbox" type="checkbox" />
             </div>
+            <div class="setting-group" style="margin-top: 12px;">
+                <label for="invert-pitch-checkbox" style="flex: 1; cursor: pointer;">Invert pitch</label>
+                <input id="invert-pitch-checkbox" type="checkbox" />
+            </div>
         </div>
     </div>
 
     <div id="info" class="glass-panel">
+        <button id="info-close" title="Dismiss">&times;</button>
         <strong>Controls</strong>
-        Right-click + drag: Orbit<br>
-        Scroll: Zoom<br>
-        Left-click: Select color<br>
-        WASD: Move orbit point<br>
+        <span class="controls-desktop">
+            Right-click + drag: Orbit<br>
+            Scroll: Zoom<br>
+            Left-click: Select colour<br>
+            WASD: Move orbit point
+        </span>
+        <span class="controls-touch">
+            Drag: Orbit<br>
+            Pinch: Zoom<br>
+            Tap: Select colour
+        </span>
+    </div>
+
+    <div id="touch-popup" class="glass-panel">
+        <div id="touch-popup-swatch"></div>
+        <div id="touch-popup-info">
+            <div class="touch-popup-name"></div>
+            <div class="touch-popup-hex"></div>
+        </div>
+        <button id="touch-popup-goto">Go to colour</button>
     </div>
 
     <div id="tooltip">

@@ -3,7 +3,7 @@ import { debounce, getEditDistance } from '../utils.js';
 export class UIManager {
     /**
      * manages UI interactions including search, settings, tooltips, and controls
-     * @param {Object} callbacks - Event callback functions: { onSearch, onSelect, onSpaceChange, onScaleChange, onBackgroundChange, onToggleAxes, onToggleVisibility }
+     * @param {Object} callbacks - Event callback functions: { onSearch, onSelect, onSpaceChange, onScaleChange, onBackgroundChange, onToggleAxes, onToggleVisibility, onInvertPitchChange }
      */
     constructor(callbacks) {
         this.callbacks = callbacks || {};
@@ -17,6 +17,9 @@ export class UIManager {
             loadingBar: document.getElementById('loading-bar'),
             loadingStatus: document.getElementById('loading-status'),
             tooltip: document.getElementById('tooltip'),
+            touchPopup: document.getElementById('touch-popup'),
+            infoPanel: document.getElementById('info'),
+            infoClose: document.getElementById('info-close'),
             searchInput: document.getElementById('search-input'),
             searchResults: document.getElementById('search-results'),
             settingsMenu: document.getElementById('settings-menu'),
@@ -31,6 +34,7 @@ export class UIManager {
             bgValVal: document.getElementById('background-value-value'),
             hideCheck: document.getElementById('hide-unflagged-checkbox'),
             axesCheck: document.getElementById('show-axes-checkbox'),
+            invertPitchCheck: document.getElementById('invert-pitch-checkbox'),
             customSelect: document.querySelector('.custom-select'),
             selectedSpaceName: document.getElementById('selected-space-name')
         };
@@ -85,6 +89,29 @@ export class UIManager {
         if (this.dom.tooltip) this.dom.tooltip.style.display = 'none';
     }
 
+    showTouchPopup(name, hex, onGoTo) {
+        const popup = this.dom.touchPopup;
+        if (!popup) return;
+
+        popup.querySelector('.touch-popup-name').textContent = name;
+        popup.querySelector('.touch-popup-hex').textContent = hex;
+        popup.querySelector('#touch-popup-swatch').style.backgroundColor = hex;
+
+        const oldBtn = popup.querySelector('#touch-popup-goto');
+        const btn = oldBtn.cloneNode(true);
+        oldBtn.parentNode.replaceChild(btn, oldBtn);
+        btn.addEventListener('click', () => {
+            onGoTo();
+            this.hideTouchPopup();
+        });
+
+        popup.classList.add('visible');
+    }
+
+    hideTouchPopup() {
+        if (this.dom.touchPopup) this.dom.touchPopup.classList.remove('visible');
+    }
+
     /**
      * Sets up all UI event listeners for search, settings, controls, and color space selection.
      */
@@ -93,6 +120,18 @@ export class UIManager {
         this._setupSettings();
         this._setupControls();
         this._setupColorSpaceSelect();
+        this._setupInfoPanel();
+    }
+
+    /**
+     * Sets up the dismiss button for the controls info panel.
+     */
+    _setupInfoPanel() {
+        if (!this.dom.infoClose || !this.dom.infoPanel) return;
+
+        this.dom.infoClose.addEventListener('click', () => {
+            this.dom.infoPanel.classList.add('dismissed');
+        });
     }
 
     /**
@@ -259,11 +298,16 @@ export class UIManager {
             });
         }
 
-        document.addEventListener('mousedown', (e) => {
+        const closeOutside = (e) => {
             if (this.dom.settingsMenu && !this.dom.settingsMenu.contains(e.target)) {
                 this.dom.settingsMenu.classList.remove('open');
             }
-        });
+            if (this.dom.touchPopup && !this.dom.touchPopup.contains(e.target)) {
+                this.hideTouchPopup();
+            }
+        };
+        document.addEventListener('mousedown', closeOutside);
+        document.addEventListener('touchstart', closeOutside);
 
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.dom.settingsMenu) {
@@ -314,6 +358,14 @@ export class UIManager {
             this.dom.axesCheck.addEventListener('change', (e) => {
                 if (this.callbacks.onToggleAxes) {
                     this.callbacks.onToggleAxes(e.target.checked);
+                }
+            });
+        }
+
+        if (this.dom.invertPitchCheck) {
+            this.dom.invertPitchCheck.addEventListener('change', (e) => {
+                if (this.callbacks.onInvertPitchChange) {
+                    this.callbacks.onInvertPitchChange(e.target.checked);
                 }
             });
         }

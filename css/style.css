@@ -12,6 +12,7 @@ body {
 #canvas-container {
     width: 100vw;
     height: 100vh;
+    touch-action: none;
 }
 
 /* Reusable Glass Panel Style */
@@ -257,11 +258,35 @@ body {
     pointer-events: none;
     color: #ccc;
 }
+#info.dismissed {
+    display: none;
+}
 #info strong {
     color: #fff;
     display: block;
     margin-bottom: 4px;
     font-size: 14px;
+}
+#info-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: color 0.2s ease;
+}
+#info-close:hover {
+    color: #fff;
 }
 
 #tooltip {
@@ -419,7 +444,85 @@ input[type=checkbox]:checked::after {
     font-weight: 600;
 }
 
+#touch-popup {
+    position: fixed;
+    bottom: -160px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: calc(100% - 48px);
+    max-width: 420px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    z-index: 500;
+    transition: bottom 0.3s cubic-bezier(0.2, 0, 0.2, 1);
+    pointer-events: none;
+}
+#touch-popup.visible {
+    bottom: 24px;
+    pointer-events: auto;
+}
+#touch-popup-swatch {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    flex-shrink: 0;
+}
+#touch-popup-info {
+    flex: 1;
+    min-width: 0;
+}
+.touch-popup-name {
+    font-weight: 600;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.touch-popup-hex {
+    font-family: 'Consolas', monospace;
+    color: #999;
+    font-size: 13px;
+    margin-top: 2px;
+}
+#touch-popup-goto {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+#touch-popup-goto:active {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.controls-touch { display: none; }
+
+@media (hover: none) and (pointer: coarse) {
+    .controls-desktop { display: none; }
+    .controls-touch { display: inline; }
+}
+
 @media (max-width: 600px) {
     #settings-panel { min-width: 100px; padding: 16px;}
-    #search-input { width: 200px; }
+    #search-container {
+        left: 16px;
+        right: 80px;
+        transform: none;
+        width: auto;
+    }
+    #search-input {
+        width: auto;
+        min-width: 0;
+        flex: 1;
+    }
 }

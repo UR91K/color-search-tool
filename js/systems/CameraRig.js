@@ -21,6 +21,7 @@ export class CameraRig {
         this.keys = {};
         this.isDragging = false;
         this.prevMouse = { x: 0, y: 0 };
+        this.invertPitch = false;
 
         this._setupEventListeners();
     }
@@ -159,7 +160,7 @@ export class CameraRig {
                 const deltaY = e.clientY - this.prevMouse.y;
 
                 this.angles.theta += deltaX * 0.005;
-                this.angles.phi += deltaY * 0.005;
+                this.angles.phi += deltaY * 0.005 * (this.invertPitch ? -1 : 1);
                 this.angles.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.angles.phi));
 
                 this.prevMouse = { x: e.clientX, y: e.clientY };
@@ -179,5 +180,61 @@ export class CameraRig {
 
         window.addEventListener('keydown', (e) => this.keys[e.key] = true);
         window.addEventListener('keyup', (e) => this.keys[e.key] = false);
+
+        this._setupTouchListeners();
+    }
+
+    _setupTouchListeners() {
+        this.prevTouchDistance = null;
+
+        this.domElement.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (e.touches.length === 1) {
+                this.isDragging = true;
+                this.prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                this.prevTouchDistance = null;
+            } else if (e.touches.length === 2) {
+                this.isDragging = false;
+                this.prevTouchDistance = this._getTouchDistance(e.touches);
+            }
+        }, { passive: false });
+
+        this.domElement.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (e.touches.length === 1 && this.isDragging) {
+                const dx = e.touches[0].clientX - this.prevMouse.x;
+                const dy = e.touches[0].clientY - this.prevMouse.y;
+                this.angles.theta += dx * 0.005;
+                this.angles.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.angles.phi + dy * 0.005 * (this.invertPitch ? -1 : 1)));
+                this.prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            } else if (e.touches.length === 2) {
+                const dist = this._getTouchDistance(e.touches);
+                if (this.prevTouchDistance !== null) {
+                    const delta = (this.prevTouchDistance - dist) * 0.005;
+                    this.distance = Math.max(0.1, Math.min(20, this.distance + delta));
+                    if (this.isAnimatingDistance) this.isAnimatingDistance = false;
+                }
+                this.prevTouchDistance = dist;
+            }
+        }, { passive: false });
+
+        this.domElement.addEventListener('touchend', (e) => {
+            if (e.touches.length === 0) {
+                this.isDragging = false;
+                this.prevTouchDistance = null;
+            } else if (e.touches.length === 1) {
+                this.isDragging = true;
+                this.prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+                this.prevTouchDistance = null;
+            } else {
+                this.prevTouchDistance = this._getTouchDistance(e.touches);
+            }
+        });
+    }
+
+    _getTouchDistance(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
     }
 }

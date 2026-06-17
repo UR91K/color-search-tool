@@ -160,7 +160,7 @@ export class CameraRig {
                 const deltaY = e.clientY - this.prevMouse.y;
 
                 this.angles.theta += deltaX * 0.005;
-                this.angles.phi += deltaY * 0.005 * (this.invertPitch ? -1 : 1);
+                this.angles.phi += deltaY * 0.005 * (this.invertPitch ? 1 : -1);
                 this.angles.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.angles.phi));
 
                 this.prevMouse = { x: e.clientX, y: e.clientY };
@@ -205,7 +205,7 @@ export class CameraRig {
                 const dx = e.touches[0].clientX - this.prevMouse.x;
                 const dy = e.touches[0].clientY - this.prevMouse.y;
                 this.angles.theta += dx * 0.005;
-                this.angles.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.angles.phi + dy * 0.005 * (this.invertPitch ? -1 : 1)));
+                this.angles.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.angles.phi + dy * 0.005 * (this.invertPitch ? 1 : -1)));
                 this.prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
             } else if (e.touches.length === 2) {
                 const dist = this._getTouchDistance(e.touches);

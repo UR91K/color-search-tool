@@ -18,7 +18,7 @@ function init() {
     graphics = new Renderer('canvas-container');
 
     cameraRig = new CameraRig(graphics.camera, graphics.renderer.domElement);
-    pointCloud = new PointCloud(graphics.scene);
+    pointCloud = new PointCloud(graphics.scene, graphics.camera);
     picker = new Picker(graphics.renderer, graphics.scene, graphics.camera);
 
     ui = new UIManager({

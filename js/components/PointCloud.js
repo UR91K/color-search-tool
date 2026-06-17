@@ -6,8 +6,9 @@ export class PointCloud {
      * manages instanced meshes for color data visualization and GPU picking
      * @param {THREE.Scene} scene - the Three.js scene to add meshes to
      */
-    constructor(scene) {
+    constructor(scene, camera) {
         this.scene = scene;
+        this.camera = camera;
 
         this.data = [];
         this.mesh = null;
@@ -19,6 +20,48 @@ export class PointCloud {
         this.selectedIndex = -1;
         this.hideUnflagged = false;
         this.currentSpace = null;
+
+        this.sphereRadius = 0.004;
+    }
+
+    /**
+     * patches a material so that any instance whose sphere intersects the
+     * camera's near clip plane is discarded entirely, instead of rendering
+     * a clipped/open sphere
+     * @param {THREE.Material} material - the instanced material to patch
+     */
+    _applyNearPlaneCull(material) {
+        material.onBeforeCompile = (shader) => {
+            shader.uniforms.uNear = { value: this.camera ? this.camera.near : 0.01 };
+            shader.uniforms.uSphereRadius = { value: this.sphereRadius };
+
+            shader.vertexShader = `
+                uniform float uNear;
+                uniform float uSphereRadius;
+                varying float vClipDiscard;
+            ` + shader.vertexShader;
+
+            shader.vertexShader = shader.vertexShader.replace(
+                '#include <project_vertex>',
+                `#include <project_vertex>
+                #ifdef USE_INSTANCING
+                    vec4 centerView = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                    float instScale = length(instanceMatrix[0].xyz);
+                    float effRadius = uSphereRadius * instScale;
+                    vClipDiscard = (centerView.z + effRadius > -uNear) ? 1.0 : 0.0;
+                #else
+                    vClipDiscard = 0.0;
+                #endif`
+            );
+
+            shader.fragmentShader = `varying float vClipDiscard;\n` + shader.fragmentShader;
+            shader.fragmentShader = shader.fragmentShader.replace(
+                'void main() {',
+                'void main() {\n\tif (vClipDiscard > 0.5) discard;'
+            );
+
+            material.userData.shader = shader;
+        };
     }
 
     /**
@@ -29,14 +72,16 @@ export class PointCloud {
         this.data = colorData;
         const count = colorData.length;
 
-        const geometry = new THREE.SphereGeometry(0.004, 16, 12);
+        const geometry = new THREE.SphereGeometry(this.sphereRadius, 16, 12);
 
         const material = new THREE.MeshBasicMaterial();
+        this._applyNearPlaneCull(material);
         this.mesh = new THREE.InstancedMesh(geometry, material, count);
         this.mesh.frustumCulled = false;
         this.scene.add(this.mesh);
 
         const pickingMaterial = new THREE.MeshBasicMaterial();
+        this._applyNearPlaneCull(pickingMaterial);
         this.pickingMesh = new THREE.InstancedMesh(geometry, pickingMaterial, count);
         this.pickingMesh.frustumCulled = false;
         this.pickingMesh.visible = false;
